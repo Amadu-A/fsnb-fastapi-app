@@ -1,0 +1,33 @@
+<!-- /templates/users/list.html -->
+{% extends "base.html" %}
+
+{% block title %}Пользователи — fsnb-fastapi{% endblock %}
+
+{% block content %}
+  <h1>Пользователи</h1>
+
+  {% if users and users|length > 0 %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Foo</th>
+          <th>Bar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.username }}</td>
+            <td>{{ u.foo }}</td>
+            <td>{{ u.bar }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Пока нет пользователей.</p>
+  {% endif %}
+{% endblock %}
