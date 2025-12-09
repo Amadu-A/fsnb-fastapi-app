@@ -8,6 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 # ВАЖНО: относительные импорты внутри пакета base_app
 from .core.config import settings
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
         default_response_class=ORJSONResponse,
         lifespan=lifespan,
     )
+    app.add_middleware(SessionMiddleware, secret_key=settings.auth.secret_key)  # <— для session/CSRF
 
     # /static -> ./static (в корне проекта)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

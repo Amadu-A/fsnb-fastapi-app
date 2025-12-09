@@ -1,0 +1,16 @@
+<!-- /templates/core/_header.html -->
+<header class="container header">
+  <nav class="navbar">
+    <a href="{{ request.url_for('home') }}" class="brand">fsnb-fastapi</a>
+    <a href="{{ request.url_for('users_list_html') }}">Пользователи</a>
+    <!-- Заглушки для будущих разделов -->
+    <a href="#">Отчёты</a>
+    <a href="#">Настройки</a>
+
+    <div class="spacer"></div>
+
+    <!-- Кнопки справа -->
+    <a class="btn" href="{{ request.url_for('login_html') }}">Вход</a>
+    <a class="btn btn-primary" href="{{ request.url_for('register_html') }}">Регистрация</a>
+  </nav>
+</header>

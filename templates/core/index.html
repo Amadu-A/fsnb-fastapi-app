@@ -1,0 +1,9 @@
+<!-- /templates/core/index.html -->
+{% extends "core/base.html" %}
+
+{% block title %}Главная — fsnb-fastapi{% endblock %}
+
+{% block content %}
+  <h1>Добро пожаловать</h1>
+  <p>Перейти к <a href="{{ request.url_for('users_list_html') }}">списку пользователей</a>.</p>
+{% endblock %}

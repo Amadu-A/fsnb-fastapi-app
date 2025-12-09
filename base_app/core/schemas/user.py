@@ -1,18 +1,21 @@
-from pydantic import BaseModel, ConfigDict
+# /base_app/core/schemas/user.py
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class UserBase(BaseModel):
-    username: str
-    foo: int
-    bar: int
+    username: str | None = None
+    foo: int = 0
+    bar: int = 0
 
 
-class UserCreate(UserBase):
-    pass
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
 
 
 class UserRead(UserBase):
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
     id: int
+    email: EmailStr

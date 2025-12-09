@@ -9,17 +9,18 @@ from fastapi.params import Depends
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from base_app.core.logging import get_logger
 from base_app.core.models import db_helper
 from base_app.crud import users as users_crud
-from base_app.core.logging import get_logger
 
 router = APIRouter()  # без префикса — это корневые HTML-страницы
+log = get_logger("web")
 
 # Путь к папке templates/ в корне проекта
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-log = get_logger("web")
+
 
 
 @router.get("/", name="home")
@@ -29,7 +30,7 @@ async def home(request: Request):
     """
     log.info({"event": "open_page", "path": "/", "method": "GET"})
     return templates.TemplateResponse(
-        "index.html",
+        "core/index.html",
         {"request": request},
     )
 

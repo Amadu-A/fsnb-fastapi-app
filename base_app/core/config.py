@@ -12,6 +12,7 @@ class RunConfig(BaseModel):
 class ApiV1Prefix(BaseModel):
     prefix: str = "/v1"
     users: str = "/users"
+    auth: str = "/auth"
 
 
 class ApiPrefix(BaseModel):
@@ -34,6 +35,27 @@ class DatabaseConfig(BaseModel):
         "pk": "pk_%(table_name)s",
     }
 
+class AuthConfig(BaseModel):
+    secret_key: str = "CHANGE_ME"                # общий секрет (JWT/CSRF/сессии)
+    algorithm: str = "HS256"
+    access_token_minutes: int = 60
+    email_verify_secret: str = "CHANGE_ME_EMAIL" # отдельный секрет для ссылок
+    verify_token_ttl_hours: int = 48
+
+
+class EmailConfig(BaseModel):
+    smtp_host: str = "localhost"
+    smtp_port: int = 25
+    smtp_user: str = ""
+    smtp_password: str = ""
+    use_tls: bool = False
+    use_ssl: bool = False
+    from_email: str = "noreply@example.com"
+
+
+class SiteConfig(BaseModel):
+    # если нужно строить абсолютные ссылки вне Request (опционально)
+    base_url: str = "http://127.0.0.1:8000"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -46,6 +68,9 @@ class Settings(BaseSettings):
     api: ApiPrefix = ApiPrefix()
     db: DatabaseConfig
 
+    auth: AuthConfig = AuthConfig()
+    email: EmailConfig = EmailConfig()
+    site: SiteConfig = SiteConfig()
 
 settings = Settings()
 print(settings.db.url)
