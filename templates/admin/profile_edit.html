@@ -1,0 +1,19 @@
+<!-- /templates/admin/profile_edit.html -->
+{% extends "core/base.html" %}
+{% block title %}Admin — Edit Profile{% endblock %}
+
+{% block content %}
+  <h2>Profile #{{ profile.id }} (user_id={{ profile.user_id }})</h2>
+  <form method="post" action="{{ request.url_for('admin_profile_edit_post', profile_id=profile.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+    <div class="form-row"><label>Nickname</label><input name="nickname" value="{{ profile.nickname or '' }}"></div>
+    <div class="form-row"><label>First name</label><input name="first_name" value="{{ profile.first_name or '' }}"></div>
+    <div class="form-row"><label>Second name</label><input name="second_name" value="{{ profile.second_name or '' }}"></div>
+    <div class="form-row"><label>Phone</label><input name="phone" value="{{ profile.phone or '' }}"></div>
+    <div class="form-row"><label>E-mail</label><input name="email" type="email" value="{{ profile.email or '' }}"></div>
+    <div class="form-row"><label>Verified</label><input name="verification" type="checkbox" {% if profile.verification %}checked{% endif %}></div>
+
+    <button class="btn btn-primary" type="submit">Save</button>
+  </form>
+{% endblock %}

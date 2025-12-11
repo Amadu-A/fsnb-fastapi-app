@@ -293,3 +293,8 @@ textarea {
   font-size: 12px;
   opacity: 0.9;
 }
+
+.table-wrap { overflow-x: auto; }
+.admin-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.admin-model { display: block; padding: 12px; border-radius: var(--radius); background: #fff; border: 1px solid #eee; }
+.admin-model__name { font-weight: 700; margin-bottom: 6px; }

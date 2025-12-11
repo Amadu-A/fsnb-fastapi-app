@@ -1,0 +1,23 @@
+<!-- /templates/admin/login.html -->
+{% extends "core/base.html" %}
+{% block title %}Admin — Login{% endblock %}
+
+{% block content %}
+  <h2>Admin Login</h2>
+  {% if alert %}
+    <div class="alert {{ 'alert-success' if alert.kind == 'success' else 'alert-error' }}">{{ alert.text }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ request.url_for('admin_login_post') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="form-row">
+      <label>Username</label>
+      <input name="username" type="text" required>
+    </div>
+    <div class="form-row">
+      <label>Password</label>
+      <input name="password" type="password" required>
+    </div>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,16 @@
+<!-- /templates/admin/index.html -->
+{% extends "core/base.html" %}
+{% block title %}Admin — Index{% endblock %}
+
+{% block content %}
+  <h2>Admin</h2>
+  <p>Signed in as: <b>{{ me.username or me.email }}</b></p>
+
+  <ul class="nav-list" style="margin-top:12px;">
+    <li><a href="{{ request.url_for('admin_users') }}">Users</a></li>
+  </ul>
+
+  <form method="post" action="{{ request.url_for('admin_logout') }}" style="margin-top:16px;">
+    <button class="btn" type="submit">Logout</button>
+  </form>
+{% endblock %}
