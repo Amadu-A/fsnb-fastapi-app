@@ -208,3 +208,88 @@ textarea {
   justify-content:flex-end;
   margin-top:8px;
 }
+/* Заголовок профиля с мини-аватаром справа */
+.profile-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+
+.profile-head-avatar{
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  object-fit:cover;
+  border:1px solid #e5e5e5;
+  background:#fff;
+}
+.btn-danger { border-color: #d33; background: #d33; color: #fff; }
+/* Профиль: заголовок и мини-аватар справа */
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  margin-bottom: var(--gap);
+}
+
+/* Правая колонка в заголовке (мини-аватар + кнопка удаления) */
+.title-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.avatar-mini {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Кнопка маленького размера (для удаления аватара под мини-аватаром) */
+.btn-xs {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* Красная кнопка */
+.btn-danger {
+  border: 1px solid #d33;
+  background: #d33;
+  color: #fff;
+}
+
+/* Зона загрузки аватара в форме */
+.avatar-uploader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.avatar-preview img {
+  max-height: 120px;
+  width: auto;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.avatar-controls .hint {
+  opacity: 0.8;
+  font-size: 12px;
+}
+
+.filename {
+  font-size: 12px;
+  opacity: 0.9;
+}

@@ -1,77 +1,97 @@
-<!-- /base_app/templates/core/profile.html -->
 {% extends "core/base.html" %}
+
+{% block head_extra %}
+  {{ super() }}
+  <script src="{{ url_for('static', path='js/avatar-preview.js') }}" defer></script>
+{% endblock %}
 {% block content %}
-<h1>Профиль</h1>
+<h1 class="title-row">
+  <span>Профиль</span>
+
+  <div class="title-right">
+    <img
+      id="avatar-mini"
+      class="avatar-mini"
+      src="{% if profile.avatar %}{{ url_for('static', path=profile.avatar) }}{% else %}{{ url_for('static', path='img/photo_cap.jpg') }}{% endif %}"
+      alt="avatar"
+      width="40"
+      height="40"
+    />
+    {% if profile.avatar %}
+      <form method="post" action="{{ request.url_for('profile_avatar_delete') }}" class="avatar-actions">
+        <button type="submit" class="btn btn-danger btn-xs">Удалить аватар</button>
+      </form>
+    {% endif %}
+  </div>
+</h1>
+
+{% if alert %}
+  <div class="alert alert-{{ alert.kind }}">{{ alert.text }}</div>
+{% endif %}
 
 <div class="card">
   <p><strong>User:</strong> {{ user.email }} | id={{ user.id }}</p>
   <p><strong>Верификация e-mail:</strong>
-    {% if user.activation_key %}
-      <span class="warn">не подтверждён</span>
-    {% else %}
-      <span class="ok">подтверждён</span>
+    {% if user.activation_key %}<span class="warn">не подтверждён</span>
+    {% else %}<span class="ok">подтверждён</span>
     {% endif %}
   </p>
 </div>
 
-<form class="form profile-form" method="post"
-      action="{{ request.url_for('profile_post_html') }}"
-      enctype="multipart/form-data">
-
+<form method="post" action="{{ request.url_for('profile_post_html') }}" enctype="multipart/form-data">
   <div class="form-row">
     <label>Nickname</label>
-    <input class="input-stick-right" type="text" name="nickname" value="{{ profile.nickname or '' }}">
+    <input type="text" name="nickname" value="{{ profile.nickname or '' }}">
   </div>
 
   <div class="form-row">
     <label>Avatar</label>
-    <div class="avatar-cell">
-      {% if profile.avatar %}
-        <div class="avatar-preview">
-          <img src="{{ url_for('static', path=profile.avatar) }}" alt="avatar">
-        </div>
-      {% endif %}
-      <input type="file" name="avatar" accept="image/*">
+    <div class="avatar-uploader">
+      <div class="avatar-preview">
+        <img
+          id="avatar-preview-img"
+          src="{% if profile.avatar %}{{ url_for('static', path=profile.avatar) }}{% else %}{{ url_for('static', path='img/photo_cap.jpg') }}{% endif %}"
+          alt="avatar preview"
+        />
+      </div>
+      <div class="avatar-controls">
+        <input id="avatar-input" type="file" name="avatar" accept="image/*" hidden>
+        <label for="avatar-input" class="btn btn-primary">Выбрать файл</label>
+        <small class="hint">JPG/PNG/GIF/WebP, минимум 40×40, до 3&nbsp;МБ.</small>
+        <span id="avatar-filename" class="filename"></span>
+      </div>
     </div>
   </div>
 
   <div class="form-row">
     <label>Имя</label>
-    <input class="input-stick-right" type="text" name="first_name" value="{{ profile.first_name or '' }}">
+    <input type="text" name="first_name" value="{{ profile.first_name or '' }}">
   </div>
-
   <div class="form-row">
     <label>Фамилия</label>
-    <input class="input-stick-right" type="text" name="second_name" value="{{ profile.second_name or '' }}">
+    <input type="text" name="second_name" value="{{ profile.second_name or '' }}">
   </div>
-
   <div class="form-row">
     <label>Телефон</label>
-    <input class="input-stick-right" type="text" name="phone" value="{{ profile.phone or '' }}">
+    <input type="text" name="phone" value="{{ profile.phone or '' }}">
   </div>
-
   <div class="form-row">
     <label>E-mail (в профиле)</label>
-    <input class="input-stick-right" type="email" name="email_field" value="{{ profile.email or '' }}">
+    <input type="email" name="email_field" value="{{ profile.email or '' }}">
   </div>
-
   <div class="form-row">
     <label>Telegram ID</label>
-    <input class="input-stick-right" type="text" name="tg_id" value="{{ profile.tg_id or '' }}">
+    <input type="text" name="tg_id" value="{{ profile.tg_id or '' }}">
   </div>
-
   <div class="form-row">
     <label>Telegram nickname</label>
-    <input class="input-stick-right" type="text" name="tg_nickname" value="{{ profile.tg_nickname or '' }}">
+    <input type="text" name="tg_nickname" value="{{ profile.tg_nickname or '' }}">
   </div>
-
   <div class="form-row">
     <label>Session (строка)</label>
-    <input class="input-stick-right" type="text" name="session_str" value="{{ profile.session or '' }}">
+    <input type="text" name="session_str" value="{{ profile.session or '' }}">
   </div>
 
-  <div class="form-actions">
-    <button class="btn btn-primary" type="submit">Сохранить</button>
-  </div>
+  <button type="submit" class="btn btn-primary">Сохранить</button>
 </form>
 {% endblock %}
