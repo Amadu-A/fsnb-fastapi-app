@@ -66,45 +66,72 @@
 Главные узлы (примерно):
 
 ```
-.
-├─ base_app/
-│  ├─ main.py                # точка входа приложения
-│  ├─ manage.py              # управляющие команды (CLI)
-│  ├─ admin.py               # регистрация моделей для админки
-│  ├─ views/                 # веб-страницы и админ
-│  │  ├─ web.py
-│  │  ├─ auth.py
-│  │  └─ admin.py
-│  ├─ api/api_v1/            # REST API (v1)
-│  │  ├─ __init__.py
-│  │  ├─ users.py
-│  │  └─ auth.py
-│  ├─ core/                  # конфиг, схемы, безопасность
+FastAPIbase/
+├─ src/
+│  ├─ main.py
+│  ├─ manage.py               # CLI (create_superuser и пр.)
+│  ├─ admin.py                # реестр моделей для админки
+│  ├─ logging.py
+│  ├─ core/
+│  │  ├─ views/
+│  │  │  ├─ web.py
+│  │  │  ├─ auth.py
+│  │  │  └─ admin.py          # (или admin_views.py)
+│  │  ├─ api/
+│  │  │  └─ api_v1/
+│  │  │     ├─ __init__.py    # сборка роутеров v1
+│  │  │     ├─ users.py
+│  │  │     └─ auth.py
+│  │  ├─ models/
+│  │  │  ├─ __init__.py
+│  │  │  ├─ base.py
+│  │  │  ├─ db_helper.py
+│  │  │  ├─ permission.py
+│  │  │  ├─ profile.py
+│  │  │  └─ user.py
+│  │  ├─ schemas/
+│  │  │  ├─ __init__.py
+│  │  │  ├─ permission.py
+│  │  │  ├─ profile.py
+│  │  │  └─ user.py
+│  │  ├─ services/
+│  │  │  ├─ __init__.py
+│  │  │  └─ auth_service.py
+│  │  ├─ mailing/
+│  │  │  ├─ __init__.py
+│  │  │  └─ mail.py
+│  │  ├─ utils/
+│  │  │  ├─ __init__.py
+│  │  │  └─ case_converter.py
 │  │  ├─ config.py
+│  │  ├─ email_tokens.py
 │  │  ├─ security.py
-│  │  ├─ dependencies.py
-│  │  └─ schemas/{user,profile,permission}.py
-│  ├─ crud/                  # репозитории (БД-операции)
+│  │  └─ dependencies.py      # DI-провайдеры (возвращают crud)
+│  ├─ crud/
 │  │  ├─ user_repository.py
 │  │  ├─ profile_repository.py
 │  │  └─ permission_repository.py
+│  ├─ templates/
+│  │  ├─ core/{base,_header,login,register,profile,index}.html
+│  │  ├─ users/list.html
+│  │  └─ admin/{index,login,users,user_edit,profile_edit,perm_edit,model_list,model_edit}.html
 │  └─ scripts/
-│     └─ superuser.py        # утилита создания суперпользователя
-├─ templates/                # Jinja2
-│  ├─ core/{base,_header,login,register,profile,index}.html
-│  ├─ users/list.html
-│  └─ admin/{index,login,users,user_edit,profile_edit,perm_edit,
-│           model_list,model_edit}.html
+│     └─ superuser.py
 ├─ static/
 │  ├─ css/style.css
 │  ├─ js/{app.js,avatar-preview.js}
 │  ├─ img/
-│  └─ uploads/avatars/       # хранение аватаров
-├─ alembic/                  # миграции
+│  └─ uploads/avatars/
+├─ alembic/
 │  ├─ env.py
 │  └─ versions/*.py
 ├─ docker-compose.yml
 ├─ poetry.lock
+├─ Readme.md
+├─ alembic.ini
+├─ .gitignore
+├─ .env
+├─ .env.example
 └─ pyproject.toml
 ```
 
