@@ -298,3 +298,124 @@ textarea {
 .admin-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .admin-model { display: block; padding: 12px; border-radius: var(--radius); background: #fff; border: 1px solid #eee; }
 .admin-model__name { font-weight: 700; margin-bottom: 6px; }
+
+
+
+/* path: static/css/style.css */
+
+/* ✅ ДОБАВИТЬ (если нет): универсальный helper */
+.hidden {
+  display: none !important;
+}
+
+/* ✅ ДОБАВИТЬ: подтверждение выбранного файла */
+.file-info {
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* ✅ ДОБАВИТЬ: модальное окно */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: #fff;
+  padding: 18px 22px;
+  border-radius: 12px;
+  text-align: center;
+  width: 240px;
+}
+
+.modal-text {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+/* ✅ ДОБАВИТЬ: "котёнок" (маленький круг ~ 24px < 1см) */
+.cat-spinner {
+  width: 24px;
+  height: 24px;
+  margin: 0 auto 10px;
+  position: relative;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.12);
+  animation: cat-rotate 0.9s linear infinite;
+}
+
+.cat-spinner::before {
+  content: "🐱";
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  transform: translateX(-50%);
+  font-size: 14px;
+}
+
+@keyframes cat-rotate {
+  to { transform: rotate(360deg); }
+}
+
+
+/* path: static/css/style.css */
+
+/* Модалка */
+.modal { position: fixed; inset: 0; z-index: 9999; }
+.modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.modal__content{
+  position:absolute; left:50%; top:50%;
+  transform: translate(-50%,-50%);
+  background:#111; color:#fff;
+  border-radius: 14px;
+  padding: 18px 20px;
+  min-width: 260px;
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+}
+
+/* Котёнок гоняется по кругу (~ 1см) */
+.kitty-spinner{
+  width: 1cm;
+  height: 1cm;
+  position: relative;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.25);
+}
+
+/* “Хвост” — точка на круге */
+.kitty-spinner::after{
+  content: "•";
+  position: absolute;
+  left: 50%;
+  top: 6%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  color: rgba(255,255,255,.9);
+}
+
+/* Орбита кота */
+.kitty-orbit{
+  position: absolute;
+  inset: 0;
+  animation: kitty-orbit 0.9s linear infinite;
+}
+
+/* Сам кот */
+.kitty{
+  position: absolute;
+  left: 50%;
+  top: 0%;
+  transform: translate(-50%, -55%);
+  font-size: 16px;
+  line-height: 1;
+}
+
+@keyframes kitty-orbit{
+  to { transform: rotate(360deg); }
+}

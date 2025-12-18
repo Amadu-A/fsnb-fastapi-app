@@ -1,0 +1,34 @@
+{% extends "core/base.html" %}
+{% block content %}
+<h1>Редактирование: {{ model_name }} #{{ obj.id }}</h1>
+
+<form method="post" action="{{ request.url_for('admin_model_edit_post', slug=slug, obj_id=obj.id) }}" class="form" style="max-width:720px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}"/>
+
+  {% for name in fields %}
+    {% set label = labels.get(name, name) %}
+    {% set val = attr(obj, name) %}
+    <div class="form-row">
+      <label>{{ label }}</label>
+
+      {% if name in readonly_fields %}
+        <div class="readonly">{{ val }}</div>
+      {% else %}
+        {% if name.startswith("is_") and (val is boolean or val in [True, False, 0, 1, '0', '1']) %}
+          {% set checked = (val == True) %}
+          <input type="checkbox" name="{{ name }}" {% if checked %}checked{% endif %}
+                 {% if name == 'is_superadmin' and not can_edit_super_flag %}disabled{% endif %}>
+          {% if name == 'is_superadmin' and not can_edit_super_flag %}
+            <small class="hint">Изменять может только суперпользователь</small>
+          {% endif %}
+        {% else %}
+          <input type="text" name="{{ name }}" value="{{ val if val is not none else '' }}">
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <button type="submit" class="btn btn-primary">Сохранить</button>
+  <a href="{{ request.url_for('admin_model_list', slug=slug) }}" class="btn">Назад</a>
+</form>
+{% endblock %}

@@ -1,0 +1,23 @@
+# path: .dockerignore
+
+# Виртуальные окружения/кэш
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Git/IDE
+.git/
+.idea/
+.vscode/
+
+# Большие данные — в контейнер монтируем volume-ами, а не копируем в образ
+weights/
+FSNB-2022_28_08_25/
+static/uploads/
+
+# Логи/артефакты
+*.log
+output/

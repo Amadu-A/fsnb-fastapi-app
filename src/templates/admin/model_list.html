@@ -1,0 +1,37 @@
+{% extends "core/base.html" %}
+{% block content %}
+<h1>Модель: {{ model_name }}</h1>
+
+<form method="get" action="{{ request.url_for('admin_model_list', slug=slug) }}" class="form-row" style="max-width:480px; gap:8px;">
+  <input type="text" name="q" value="{{ q }}" placeholder="Поиск..." />
+  <button class="btn btn-primary" type="submit">Найти</button>
+</form>
+
+<div class="table-wrap" style="overflow:auto; margin-top:12px;">
+  <table class="table">
+    <thead>
+      <tr>
+        {% for f in list_display %}
+          <th>{{ f }}</th>
+        {% endfor %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          {% for f in list_display %}
+            <td>{{ attr(row, f) }}</td>
+          {% endfor %}
+          <td>
+            <a class="btn btn-xs" href="{{ request.url_for('admin_model_edit', slug=slug, obj_id=attr(row, 'id')) }}">Edit</a>
+          </td>
+        </tr>
+      {% endfor %}
+      {% if not rows %}
+        <tr><td colspan="{{ list_display|length + 1 }}">Пусто</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

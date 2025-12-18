@@ -1,0 +1,31 @@
+{% extends "core/base.html" %}
+{% block title %}Вход — fsnb-fastapi{% endblock %}
+
+{% block content %}
+  <h2>Вход</h2>
+
+  {% if alert %}
+    <div class="alert {{ alert.kind }}">{{ alert.text }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ request.url_for('login_post_html') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+
+    <div class="form-row">
+      <label>E-mail</label>
+      <input type="email" name="email" required placeholder="email@domain.tld" />
+    </div>
+
+    <div class="form-row">
+      <label>Пароль</label>
+      <input type="password" name="password" required placeholder="********" />
+    </div>
+
+    <div class="form-row">
+      <label>Капча: {{ a }} + {{ b }} = ?</label>
+      <input type="number" name="captcha" required />
+    </div>
+
+    <button class="btn btn-primary" type="submit">Войти</button>
+  </form>
+{% endblock %}

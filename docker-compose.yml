@@ -1,31 +1,80 @@
-# docker-compose.yml
+# path: docker-compose.yml
 services:
-
   pg:
-    image: postgres
+    image: postgres:16
     environment:
       POSTGRES_DB: shop
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     ports:
       - "5436:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   adminer:
     image: adminer
     ports:
       - "8091:8080"
+    depends_on:
+      - pg
 
   pgadmin:
     image: dpage/pgadmin4
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.org
       PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
       - "5050:80"
+    depends_on:
+      - pg
+
   mailhog:
     image: mailhog/mailhog
     ports:
-      - "8025:8025"   # UI
-      - "1025:1025"   # SMTP
+      - "8025:8025"
+      - "1025:1025"
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    ports:
+      - "6335:6333"   # REST на хосте
+      - "6336:6334"   # health/metrics на хосте
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Внутри docker-сети ходим по именам сервисов, а не localhost
+      APP_CONFIG__DB__URL: postgresql+asyncpg://user:password@pg:5432/shop
+      APP_CONFIG__QDRANT__HOST: qdrant
+      APP_CONFIG__QDRANT__PORT: "6333"
+      # если в твоём конфиге почта берётся из APP_CONFIG__EMAIL__*, можешь не задавать
+      APP_CONFIG__FSNB__HF_EMBED_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - pg
+      - qdrant
+      - mailhog
+    ports:
+      - "8015:8000"
+    volumes:
+      # данные и веса монтируем, чтобы не тянуть в образ
+      - ./FSNB-2022_28_08_25:/app/FSNB-2022_28_08_25
+      - ./weights:/app/weights
+      - ./static:/app/static
+
+volumes:
+  pgdata:
+  qdrant_data:

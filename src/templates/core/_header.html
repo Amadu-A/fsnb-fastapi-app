@@ -1,0 +1,42 @@
+<!-- templates/core/_header.html -->
+<header class="header">
+  <div class="container header-inner">
+    <a href="{{ request.url_for('home') }}" class="brand">fsnb-fastapi</a>
+
+    <nav class="nav">
+      {% set is_auth = request.session.get('access_token') and request.session.get('user_email') %}
+      {% set admin_uid = request.session.get('admin_user_id') %}
+      <ul class="nav-list">
+        {# 1) Если вошли в админку — показываем элементы админа #}
+        {% if admin_uid %}
+          <li class="nav-item">
+            <a href="{{ request.url_for('admin_index') }}">Админка</a>
+          </li>
+          <li class="nav-item">
+            <form method="post" action="{{ request.url_for('admin_logout') }}">
+              <button type="submit" class="nav-logout">Выйти (admin)</button>
+            </form>
+          </li>
+
+        {# 2) Иначе — обычная пользовательская навигация #}
+        {% elif is_auth %}
+          <li class="nav-item">
+            <a href="{{ request.url_for('profile_html') }}">Профиль</a>
+          </li>
+          <li class="nav-item">
+            <form method="post" action="{{ request.url_for('logout_html') }}">
+              <button type="submit" class="nav-logout">Выйти</button>
+            </form>
+          </li>
+        {% else %}
+          <li class="nav-item">
+            <a href="{{ request.url_for('login_html') }}">Вход</a>
+          </li>
+          <li class="nav-item">
+            <a href="{{ request.url_for('register_html') }}">Регистрация</a>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+</header>

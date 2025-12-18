@@ -66,45 +66,72 @@
 Главные узлы (примерно):
 
 ```
-.
-├─ base_app/
-│  ├─ main.py                # точка входа приложения
-│  ├─ manage.py              # управляющие команды (CLI)
-│  ├─ admin.py               # регистрация моделей для админки
-│  ├─ views/                 # веб-страницы и админ
-│  │  ├─ web.py
-│  │  ├─ auth.py
-│  │  └─ admin.py
-│  ├─ api/api_v1/            # REST API (v1)
-│  │  ├─ __init__.py
-│  │  ├─ users.py
-│  │  └─ auth.py
-│  ├─ core/                  # конфиг, схемы, безопасность
+FastAPIbase/
+├─ src/
+│  ├─ main.py
+│  ├─ manage.py               # CLI (create_superuser и пр.)
+│  ├─ admin.py                # реестр моделей для админки
+│  ├─ logging.py
+│  ├─ core/
+│  │  ├─ views/
+│  │  │  ├─ web.py
+│  │  │  ├─ auth.py
+│  │  │  └─ admin.py          # (или admin_views.py)
+│  │  ├─ api/
+│  │  │  └─ api_v1/
+│  │  │     ├─ __init__.py    # сборка роутеров v1
+│  │  │     ├─ users.py
+│  │  │     └─ auth.py
+│  │  ├─ models/
+│  │  │  ├─ __init__.py
+│  │  │  ├─ base.py
+│  │  │  ├─ db_helper.py
+│  │  │  ├─ permission.py
+│  │  │  ├─ profile.py
+│  │  │  └─ user.py
+│  │  ├─ schemas/
+│  │  │  ├─ __init__.py
+│  │  │  ├─ permission.py
+│  │  │  ├─ profile.py
+│  │  │  └─ user.py
+│  │  ├─ services/
+│  │  │  ├─ __init__.py
+│  │  │  └─ auth_service.py
+│  │  ├─ mailing/
+│  │  │  ├─ __init__.py
+│  │  │  └─ mail.py
+│  │  ├─ utils/
+│  │  │  ├─ __init__.py
+│  │  │  └─ case_converter.py
 │  │  ├─ config.py
+│  │  ├─ email_tokens.py
 │  │  ├─ security.py
-│  │  ├─ dependencies.py
-│  │  └─ schemas/{user,profile,permission}.py
-│  ├─ crud/                  # репозитории (БД-операции)
+│  │  └─ dependencies.py      # DI-провайдеры (возвращают crud)
+│  ├─ crud/
 │  │  ├─ user_repository.py
 │  │  ├─ profile_repository.py
 │  │  └─ permission_repository.py
+│  ├─ templates/
+│  │  ├─ core/{base,_header,login,register,profile,index}.html
+│  │  ├─ users/list.html
+│  │  └─ admin/{index,login,users,user_edit,profile_edit,perm_edit,model_list,model_edit}.html
 │  └─ scripts/
-│     └─ superuser.py        # утилита создания суперпользователя
-├─ templates/                # Jinja2
-│  ├─ core/{base,_header,login,register,profile,index}.html
-│  ├─ users/list.html
-│  └─ admin/{index,login,users,user_edit,profile_edit,perm_edit,
-│           model_list,model_edit}.html
+│     └─ superuser.py
 ├─ static/
 │  ├─ css/style.css
 │  ├─ js/{app.js,avatar-preview.js}
 │  ├─ img/
-│  └─ uploads/avatars/       # хранение аватаров
-├─ alembic/                  # миграции
+│  └─ uploads/avatars/
+├─ alembic/
 │  ├─ env.py
 │  └─ versions/*.py
 ├─ docker-compose.yml
 ├─ poetry.lock
+├─ Readme.md
+├─ alembic.ini
+├─ .gitignore
+├─ .env
+├─ .env.example
 └─ pyproject.toml
 ```
 
@@ -289,11 +316,11 @@ poetry run python -m base_app.scripts.superuser
 
 ## Регистрация моделей в админке (аналог `django admin.py`)
 
-Файл `base_app/admin.py` содержит минимальный «реестр» моделей:
+Файл `src/admin.py` содержит минимальный «реестр» моделей:
 
 ```python
-from base_app.admin import admin_site
-from base_app.core.models.user import User
+from src.admin import admin_site
+from src.core.models.user import User
 
 admin_site.register(
     User,
@@ -325,6 +352,9 @@ admin_site.register(
 
 ---
 
+
+
+
 ## Расширение и доработка
 
 - Добавляйте модели в БД через Alembic, регистрируйте их в `base_app/admin.py` — они появятся в админ‑меню.
@@ -341,3 +371,40 @@ admin_site.register(
 - **CSRF в админке**: логин/формы используют CSRF‑токен; при 400/403 проверьте скрытое поле и сессию.
 - **Права не сохраняются**: `is_superadmin` может менять только супер‑админ.
 - **Аватар/превью**: проверяйте подключение `static/js/avatar-preview.js` (через `defer`) и кеш браузера.
+
+
+# Сервис получения ВОР
+
+Создать суперпользователя
+```
+docker compose exec app bash -lc "python -m src.manage --create_superuser"
+```
+Залить ФСНБ в Postgres
+```
+docker compose exec app bash -lc "python -m src.scripts.create_fsnb_pg"
+```
+Проверить Postgres (таблицы + количество + примеры)
+```
+docker compose exec pg bash -lc "psql -U user -d shop -c '\dt'"
+
+docker compose exec pg bash -lc "psql -U user -d shop -c 'select count(*) from items;'"
+
+docker compose exec pg bash -lc "psql -U user -d shop -c \"select type, count(*) from items group by type order by 2 desc;\""
+
+docker compose exec pg bash -lc "psql -U user -d shop -c \"select id, code, left(name,120) as name, unit, type from items order by id limit 5;\""
+```
+Индексация Qdrant
+```
+docker compose exec app bash -lc "python -m src.scripts.init_vector_db"
+```
+Проверить Qdrant (с хоста)
+### список коллекций (на хосте qdrant проброшен как 6335)
+```
+curl -s http://127.0.0.1:6335/collections | head
+```
+### count по коллекции (пример: fsnb_giga)
+```
+curl -s -X POST "http://127.0.0.1:6335/collections/fsnb_giga/points/count" \
+  -H "Content-Type: application/json" \
+  -d '{"exact": true}' | head
+```

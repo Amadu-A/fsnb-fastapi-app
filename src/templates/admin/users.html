@@ -1,0 +1,27 @@
+{% extends "core/base.html" %}
+{% block title %}Admin — Users{% endblock %}
+{% block content %}
+  <h2>Users</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th><th>E-mail</th><th>Username</th><th>Active</th><th>Verified</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      {% set u = it.user %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.username or "—" }}</td>
+        <td>{{ "✓" if u.is_active else "—" }}</td>
+        <td>{{ "✓" if it.verified else "—" }}</td>
+        <td>
+          <a class="btn btn-primary btn-xs" href="{{ request.url_for('admin_user_edit_get', user_id=u.id) }}">Edit</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
