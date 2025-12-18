@@ -1,15 +1,32 @@
-{# templates/fsnb_matcher/widget.html #}
-<section class="card">
-  <h2>ФСНБ-2022 — сопоставление позиций (Giga)</h2>
-  <p>Загрузите JSON вида: <code>{"items":[{"Caption":"","Units":"","Quantity":""}]}</code></p>
+{# path: templates/fsnb_matcher/widget.html #}
 
-  <form id="fsnb-form">
-    <input id="fsnb-file" type="file" name="file" accept=".json" required hidden>
-    <label for="fsnb-file" class="btn btn-primary">Выбрать JSON</label>
-    <button type="submit" class="btn btn-primary">Сопоставить и скачать Excel</button>
+<div class="card" id="fsnb-matcher">
+  <form id="fsnb-match-form">
+    <div class="row">
+      <!-- сохраняем стиль кнопки выбора файла: input скрыт, кнопка — label -->
+      <label class="btn" for="fsnb-file">Выбрать JSON</label>
+      <input id="fsnb-file" name="file" type="file" accept=".json,application/json" hidden />
+
+      <span id="fsnb-file-status" class="muted">Файл не выбран</span>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <button class="btn btn-primary" type="submit">Сопоставить и скачать Excel</button>
+    </div>
+
+    <div id="fsnb-error" class="alert alert-error" style="display:none; margin-top:12px;"></div>
   </form>
+</div>
 
-  <div id="fsnb-overlay" class="overlay" style="display:none">
-    <div class="spinner"></div>
+<!-- Модальное окно обработки -->
+<div id="fsnb-modal" class="modal" style="display:none;" aria-hidden="true">
+  <div class="modal__backdrop"></div>
+  <div class="modal__content">
+    <div class="kitty-spinner" aria-hidden="true">
+      <span class="kitty-orbit">
+        <span class="kitty">🐱</span>
+      </span>
+    </div>
+    <div class="modal__text">Обрабатываю…</div>
   </div>
-</section>
+</div>

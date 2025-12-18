@@ -1,42 +1,107 @@
-// static/js/fsnb_matcher.js
+// path: static/js/fsnb_matcher.js
+
 (function () {
-  const form = document.getElementById('fsnb-form');
-  if (!form) return;
+  function $(id) { return document.getElementById(id); }
 
-  const overlay = document.getElementById('fsnb-overlay');
+  function showModal() {
+    const m = $("fsnb-modal");
+    if (!m) return;
+    m.style.display = "block";
+    m.setAttribute("aria-hidden", "false");
+  }
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fileInput = document.getElementById('fsnb-file');
-    if (!fileInput.files || fileInput.files.length === 0) {
-      alert('Выберите JSON файл');
-      return;
-    }
+  function hideModal() {
+    const m = $("fsnb-modal");
+    if (!m) return;
+    m.style.display = "none";
+    m.setAttribute("aria-hidden", "true");
+  }
 
-    const fd = new FormData();
-    fd.append('file', fileInput.files[0]);
+  function showError(text) {
+    const el = $("fsnb-error");
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = "block";
+  }
 
-    overlay.style.display = 'flex';
-    try {
-      const res = await fetch('/api/v1/fsnb/match', { method: 'POST', body: fd });
-      if (res.status === 401) {
-        alert('Нужно авторизоваться для использования сервиса.');
+  function clearError() {
+    const el = $("fsnb-error");
+    if (!el) return;
+    el.textContent = "";
+    el.style.display = "none";
+  }
+
+  function filenameFromDisposition(disposition) {
+    if (!disposition) return null;
+    // attachment; filename="smeta.xlsx"
+    const m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
+    if (!m) return null;
+    try { return decodeURIComponent(m[1].replace(/"/g, "")); } catch { return m[1].replace(/"/g, ""); }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const form = $("fsnb-match-form");
+    const fileInput = $("fsnb-file");
+    const status = $("fsnb-file-status");
+
+    if (!form || !fileInput) return;
+
+    fileInput.addEventListener("change", () => {
+      clearError();
+      const f = fileInput.files && fileInput.files[0];
+      if (status) status.textContent = f ? `Выбран: ${f.name}` : "Файл не выбран";
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) {
+        showError("Выбери JSON-файл перед сопоставлением.");
         return;
       }
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || 'Ошибка сервера');
+
+      const fd = new FormData();
+      fd.append("file", f);
+
+      showModal();
+
+      try {
+        const resp = await fetch("/api/v1/fsnb/match", {
+          method: "POST",
+          body: fd,
+          credentials: "include",
+        });
+
+        if (!resp.ok) {
+          let detail = `Ошибка сопоставления: HTTP ${resp.status}`;
+          try {
+            const data = await resp.json();
+            if (data && data.detail) detail = String(data.detail);
+          } catch (_) {}
+          throw new Error(detail);
+        }
+
+        const blob = await resp.blob();
+
+        const cd = resp.headers.get("Content-Disposition");
+        const name = filenameFromDisposition(cd) || "smeta.xlsx";
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+      } catch (err) {
+        showError(err?.message ? String(err.message) : "Неизвестная ошибка");
+      } finally {
+        hideModal();
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'smeta.xlsx'; a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(String(err));
-    } finally {
-      overlay.style.display = 'none';
-      form.reset();
-    }
+    });
   });
 })();
