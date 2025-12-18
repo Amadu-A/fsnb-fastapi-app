@@ -1,14 +1,14 @@
-<!-- /templates/core/index.html -->
 {% extends "core/base.html" %}
 
 {% block title %}Главная — fsnb-fastapi{% endblock %}
 
-{% block content %}
-  <h1>Добро пожаловать</h1>
+{% block head_extra %}
+  {{ super() }}
+  <script src="{{ request.url_for('static', path='js/fsnb_matcher.js') }}" defer></script>
+{% endblock %}
 
-  {% if alert %}
-    <div class="alert alert-{{ alert.kind }}">{{ alert.text }}</div>
-  {% endif %}
+{% block content %}
+  <h1>Главная</h1>
 
   {% if verify_link %}
     <p style="margin:.5rem 0 1rem">
@@ -19,4 +19,17 @@
   {% endif %}
 
   <p>Перейти к <a href="{{ request.url_for('users_list_html') }}">списку пользователей</a>.</p>
+
+  {% set is_auth = request.session.get('access_token') and request.session.get('user_email') %}
+  {% if is_auth %}
+    {% include "fsnb_matcher/widget.html" %}
+  {% else %}
+    <div class="card">
+      <p>
+        Для использования функции сопоставления спецификации с ФСНБ-2022 (ВОР) необходимо
+        <a href="{{ request.url_for('login_html') }}">войти</a> или
+        <a href="{{ request.url_for('register_html') }}">зарегистрироваться</a>.
+      </p>
+    </div>
+  {% endif %}
 {% endblock %}

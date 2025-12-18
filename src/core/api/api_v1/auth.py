@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.models import db_helper
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.services.auth_service import AuthService
 
-router = APIRouter(prefix=settings.api.v1.auth, tags=["auth"])
+router = APIRouter(tags=["auth"])
 log = get_logger("api.auth")
 
 

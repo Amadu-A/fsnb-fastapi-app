@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from src.core.models import db_helper
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.mailing.email import send_verification_email_sync
 from src.core.services.auth_service import AuthService
 from src.crud.user_repository import UserRepository  # <-- добавили

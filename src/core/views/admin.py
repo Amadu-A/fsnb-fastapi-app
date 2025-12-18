@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.sql.schema import Column
 
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.models import db_helper
 from src.core.models.user import User
 from src.core.models.profile import Profile

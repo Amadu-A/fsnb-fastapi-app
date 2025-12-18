@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.core.config import settings
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.security import (
     hash_password,
     verify_password,

@@ -7,7 +7,7 @@ from getpass import getpass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.models import db_helper
 from src.scripts.superuser import create_superuser
 

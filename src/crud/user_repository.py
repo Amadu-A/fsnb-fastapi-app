@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.models import User, Profile, Permission
 from src.core.schemas.user import UserCreate
 from src.core.security import hash_password

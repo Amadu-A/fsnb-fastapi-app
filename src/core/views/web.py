@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.models import db_helper
 from src.crud.user_repository import UserRepository, get_all_users
 

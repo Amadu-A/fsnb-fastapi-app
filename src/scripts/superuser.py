@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.logging import get_logger
+from src.app_logging import get_logger
 from src.core.models.user import User
 from src.core.models.profile import Profile
 from src.core.models.permission import Permission

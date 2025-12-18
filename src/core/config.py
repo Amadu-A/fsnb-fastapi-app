@@ -2,6 +2,8 @@
 from pydantic import BaseModel
 from pydantic import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+from typing import Literal
 
 
 class RunConfig(BaseModel):
@@ -57,6 +59,27 @@ class SiteConfig(BaseModel):
     # если нужно строить абсолютные ссылки вне Request (опционально)
     base_url: str = "http://127.0.0.1:8000"
 
+
+class QdrantConfig(BaseModel):
+    host: str = "localhost"          # в docker-сети будет "qdrant"
+    port: int = 6333
+    timeout_s: int = 300
+
+class FsnbConfig(BaseModel):
+    fsnb_dir: str = "FSNB-2022_28_08_25"
+    weights_dir: str = "weights"
+    model_giga_dir: str = "weights/Giga-Embeddings-instruct"
+    similarity_threshold: float = 0.70
+    embed_batch_size: int = 128
+
+    # Тонкие настройки/инференс
+    gpu_slots: int = 1
+    giga_query_bs: int = 2
+    giga_index_bs: int = 8
+    hf_embed_device: Literal["auto", "cuda", "cpu"] = "auto"
+    hf_embed_fp16: bool = True
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(".env.example", ".env"),
@@ -72,5 +95,7 @@ class Settings(BaseSettings):
     email: EmailConfig = EmailConfig()
     site: SiteConfig = SiteConfig()
 
+    qdrant: QdrantConfig = QdrantConfig()
+    fsnb: FsnbConfig = FsnbConfig()
+
 settings = Settings()
-print(settings.db.url)

@@ -316,11 +316,11 @@ poetry run python -m base_app.scripts.superuser
 
 ## Регистрация моделей в админке (аналог `django admin.py`)
 
-Файл `base_app/admin.py` содержит минимальный «реестр» моделей:
+Файл `src/admin.py` содержит минимальный «реестр» моделей:
 
 ```python
-from base_app.admin import admin_site
-from base_app.core.models.user import User
+from src.admin import admin_site
+from src.core.models.user import User
 
 admin_site.register(
     User,
@@ -352,6 +352,9 @@ admin_site.register(
 
 ---
 
+
+
+
 ## Расширение и доработка
 
 - Добавляйте модели в БД через Alembic, регистрируйте их в `base_app/admin.py` — они появятся в админ‑меню.
@@ -368,3 +371,40 @@ admin_site.register(
 - **CSRF в админке**: логин/формы используют CSRF‑токен; при 400/403 проверьте скрытое поле и сессию.
 - **Права не сохраняются**: `is_superadmin` может менять только супер‑админ.
 - **Аватар/превью**: проверяйте подключение `static/js/avatar-preview.js` (через `defer`) и кеш браузера.
+
+
+# Сервис получения ВОР
+
+Создать суперпользователя
+```
+docker compose exec app bash -lc "python -m src.manage --create_superuser"
+```
+Залить ФСНБ в Postgres
+```
+docker compose exec app bash -lc "python -m src.scripts.create_fsnb_pg"
+```
+Проверить Postgres (таблицы + количество + примеры)
+```
+docker compose exec pg bash -lc "psql -U user -d shop -c '\dt'"
+
+docker compose exec pg bash -lc "psql -U user -d shop -c 'select count(*) from items;'"
+
+docker compose exec pg bash -lc "psql -U user -d shop -c \"select type, count(*) from items group by type order by 2 desc;\""
+
+docker compose exec pg bash -lc "psql -U user -d shop -c \"select id, code, left(name,120) as name, unit, type from items order by id limit 5;\""
+```
+Индексация Qdrant
+```
+docker compose exec app bash -lc "python -m src.scripts.init_vector_db"
+```
+Проверить Qdrant (с хоста)
+### список коллекций (на хосте qdrant проброшен как 6335)
+```
+curl -s http://127.0.0.1:6335/collections | head
+```
+### count по коллекции (пример: fsnb_giga)
+```
+curl -s -X POST "http://127.0.0.1:6335/collections/fsnb_giga/points/count" \
+  -H "Content-Type: application/json" \
+  -d '{"exact": true}' | head
+```

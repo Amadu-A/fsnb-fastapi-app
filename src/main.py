@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
 
     # HTML-views и API
     app.include_router(views_router)
-    app.include_router(api_router, prefix=settings.api.prefix)
+    app.include_router(api_router)
     return app
 
 

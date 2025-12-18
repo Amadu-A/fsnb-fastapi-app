@@ -5,7 +5,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 from src.core.config import settings
-from src.logging import get_logger
+from src.app_logging import get_logger
 
 log = get_logger("mail")
 

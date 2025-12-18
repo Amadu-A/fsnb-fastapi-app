@@ -6,7 +6,8 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
 from .security import decode_token
-from src.logging import get_logger
+from src.app_logging import get_logger
+from src.crud import item_repository
 
 # ВАЖНО: tokenUrl должен совпадать с реальным API-роутом получения токена
 # Если у тебя токен выдаёт, например, /api/api_v1/auth/token — укажи его.
@@ -25,3 +26,8 @@ def get_current_subject(token: str = Depends(oauth2_scheme)) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+
+def get_item_repository():
+    """Dependency для работы с таблицей items (используется в fsnb_matcher)."""
+    return item_repository

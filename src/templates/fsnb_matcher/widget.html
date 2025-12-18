@@ -1,0 +1,15 @@
+{# templates/fsnb_matcher/widget.html #}
+<section class="card">
+  <h2>ФСНБ-2022 — сопоставление позиций (Giga)</h2>
+  <p>Загрузите JSON вида: <code>{"items":[{"Caption":"","Units":"","Quantity":""}]}</code></p>
+
+  <form id="fsnb-form">
+    <input id="fsnb-file" type="file" name="file" accept=".json" required hidden>
+    <label for="fsnb-file" class="btn btn-primary">Выбрать JSON</label>
+    <button type="submit" class="btn btn-primary">Сопоставить и скачать Excel</button>
+  </form>
+
+  <div id="fsnb-overlay" class="overlay" style="display:none">
+    <div class="spinner"></div>
+  </div>
+</section>
