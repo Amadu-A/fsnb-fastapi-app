@@ -1,69 +1,110 @@
+# path: src/fsnb_matcher/services/index_qdrant.py
 from __future__ import annotations
 
-from typing import List, Tuple
+import asyncio
+from typing import List
 
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, PointStruct, VectorParams
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app_logging import get_logger
 from src.core.config import settings
 from src.core.models.db_helper import db_helper
-from src.crud.item_repository import ItemRepository
+from src.crud.item_repository import IItemRepository, ItemRepository
+from src.fsnb_matcher.embeddings import model_giga
 from src.fsnb_matcher.services.qdr import get_qdrant_client
-from src.fsnb_matcher.embeddings import model_giga  # <-- поправь импорт под свой путь
+
 
 logger = get_logger(__name__)
 
-COLLECTION_GIGA = "fsnb_giga"  # можешь вынести в settings позже
+
+def _get_collection_name() -> str:
+    """
+    Единый источник имени коллекции.
+    Должно совпадать с matcher_service.
+    """
+    name = getattr(settings.fsnb, "qdrant_collection", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return "fsnb_giga"
 
 
-async def fetch_all_item_ids_and_names() -> List[Tuple[int, str]]:
-    async for session in db_helper.session_getter():
-        return await ItemRepository.fetch_all_item_ids_and_names(session)
-    return []
-
-
-async def init_all_collections() -> int:
+async def init_all_collections(
+    session: AsyncSession,
+    item_repo: IItemRepository,
+) -> int:
     """
     Создаёт коллекцию в Qdrant и заливает туда эмбеддинги (Giga) для всех items из Postgres.
     Возвращает количество залитых точек.
+
+    Важно:
+    - Postgres читаем потоково через item_repo.iter_for_index(), чтобы не держать всё в памяти.
+    - encode()/upsert() синхронные → выносим в asyncio.to_thread.
     """
-    items = await fetch_all_item_ids_and_names()
-    total = len(items)
-    logger.info({"event": "pg_items_loaded", "count": total})
-
-    if total == 0:
-        return 0
-
     client = get_qdrant_client()
+    collection_name = _get_collection_name()
 
     dim = int(model_giga.dim())
-    batch = int(settings.fsnb.giga_index_bs)  # микро-батч для Giga, напр. 8
+    batch_size = int(settings.fsnb.giga_index_bs)
 
-    # пересоздаём коллекцию
     client.recreate_collection(
-        collection_name=COLLECTION_GIGA,
+        collection_name=collection_name,
         vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
     )
-    logger.info({"event": "qdrant_collection_recreated", "collection": COLLECTION_GIGA, "dim": dim})
+    logger.info("qdrant_collection_recreated", extra={"collection": collection_name, "dim": dim})
 
     done = 0
-    for i in range(0, total, batch):
-        chunk = items[i : i + batch]
-        ids = [item_id for (item_id, _) in chunk]
-        texts = [name for (_, name) in chunk]
+    ids_batch: List[int] = []
+    texts_batch: List[str] = []
 
-        vectors = model_giga.encode(texts, is_query=False, batch_size=len(texts))
+    async for item_id, name, _code, _unit, _type in item_repo.iter_for_index(session, yield_per=2000):
+        ids_batch.append(int(item_id))
+        texts_batch.append(str(name))
+
+        if len(ids_batch) < batch_size:
+            continue
+
+        vectors = await asyncio.to_thread(model_giga.encode, texts_batch, False, len(texts_batch))
+        if hasattr(vectors, "tolist"):
+            vectors = vectors.tolist()
 
         points = [
-            PointStruct(id=int(pid), vector=vec, payload={"name": texts[idx]})
-            for idx, (pid, vec) in enumerate(zip(ids, vectors))
+            PointStruct(id=int(pid), vector=vec, payload={"name": texts_batch[idx]})
+            for idx, (pid, vec) in enumerate(zip(ids_batch, vectors))
         ]
 
-        client.upsert(collection_name=COLLECTION_GIGA, points=points, wait=False)
+        await asyncio.to_thread(client.upsert, collection_name, points, False)
         done += len(points)
 
-        if done % 1000 < batch:
-            logger.info({"event": "qdrant_upsert_progress", "done": done, "total": total})
+        if done % 1000 < batch_size:
+            logger.info("qdrant_upsert_progress", extra={"done": done})
 
-    logger.info({"event": "qdrant_upsert_done", "collection": COLLECTION_GIGA, "count": done})
+        ids_batch.clear()
+        texts_batch.clear()
+
+    # добиваем хвост
+    if ids_batch:
+        vectors = await asyncio.to_thread(model_giga.encode, texts_batch, False, len(texts_batch))
+        if hasattr(vectors, "tolist"):
+            vectors = vectors.tolist()
+
+        points = [
+            PointStruct(id=int(pid), vector=vec, payload={"name": texts_batch[idx]})
+            for idx, (pid, vec) in enumerate(zip(ids_batch, vectors))
+        ]
+        await asyncio.to_thread(client.upsert, collection_name, points, False)
+        done += len(points)
+
+    logger.info("qdrant_upsert_done", extra={"collection": collection_name, "count": done})
     return done
+
+
+async def init_all_collections_entrypoint() -> int:
+    """
+    Точка входа для CLI.
+    Здесь допустимо создать session/repo (это обвязка).
+    """
+    item_repo: IItemRepository = ItemRepository()
+
+    async with db_helper.session_factory() as session:
+        return await init_all_collections(session, item_repo)
