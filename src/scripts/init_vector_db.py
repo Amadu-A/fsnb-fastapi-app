@@ -1,13 +1,27 @@
+# path: src/scripts/init_vector_db.py
+"""
+Индексация Postgres → Qdrant (создание коллекции и заливка векторов).
+
+Использование:
+  docker compose exec app bash -lc "python -m src.scripts.init_vector_db"
+"""
+
+from __future__ import annotations
+
 import asyncio
-from src.fsnb_matcher.services.index_qdrant import init_all_collections
+
 from src.app_logging import get_logger
+from src.fsnb_matcher.services.index_qdrant import init_all_collections_entrypoint
 
-log = get_logger(__name__)
 
-async def main():
-    log.info("⏳ [init_vector_db] Индексация Qdrant начата...")
-    count = await init_all_collections()
-    log.info(f"✅ [init_vector_db] Индексация завершена. Всего записей: {count}")
+logger = get_logger(__name__)
+
+
+async def main() -> None:
+    logger.info("init_vector_db_start")
+    count = await init_all_collections_entrypoint()
+    logger.info("init_vector_db_done", extra={"count": int(count)})
+
 
 if __name__ == "__main__":
     asyncio.run(main())

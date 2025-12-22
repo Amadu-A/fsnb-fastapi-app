@@ -1,35 +1,44 @@
-# /src/core/services/auth_service.py
+# path: src/core/services/auth_service.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
-from src.core.config import settings
 from src.app_logging import get_logger
+from src.core.config import settings
 from src.core.security import (
+    create_access_token,
     hash_password,
     verify_password,
-    create_access_token,
 )
-from src.crud.user_repository import UserRepository
+from src.crud.user_repository import IUserRepository, UserRepository
 
 try:
-    # itsdangerous — короткие verify-ссылки
     from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 except Exception:  # pragma: no cover
     URLSafeTimedSerializer = None  # type: ignore
+
 
 log = get_logger("service.auth")
 
 
 class AuthService:
-    def __init__(self) -> None:
-        self.repo = UserRepository()
+    """
+    Сервис авторизации/регистрации.
+
+    Важно:
+    - Repo приходит через DI (или создаётся по умолчанию),
+      чтобы сервис не зависел от конкретной реализации.
+    - DB-операции выполняются через репозиторий.
+    """
+
+    def __init__(self, repo: Optional[IUserRepository] = None) -> None:
+        self.repo: IUserRepository = repo or UserRepository()
 
     # --- verify-токен для письма ---
     def _get_serializer(self) -> URLSafeTimedSerializer:
         if URLSafeTimedSerializer is None:
             raise RuntimeError("itsdangerous is not installed")
-        # соль можно оставить пустой/константой, главное — один и тот же секрет
         return URLSafeTimedSerializer(settings.auth.email_verify_secret)
 
     def make_verify_token(self, *, uid: int, email: str) -> str:
@@ -49,24 +58,31 @@ class AuthService:
 
     # --- Регистрация ---
     async def register_user(self, session, *, email: str, password: str) -> tuple[int, str]:
-        existing = await self.repo.get_by_email(session, email=email)
+        email_norm = email.strip().lower()
+
+        existing = await self.repo.get_by_email(session, email=email_norm)
         if existing:
             raise ValueError("email_already_exists")
 
         user = await self.repo.create_user_with_profile_and_permission(
             session,
-            email=email,
+            email=email_norm,
             hashed_password=hash_password(password),
         )
 
-        # Сохраняем verify-токен и метку
-        token = self.make_verify_token(uid=user.id, email=email)
-        user.activation_key = token
-        user.activation_sent_at = datetime.now(tz=timezone.utc)
+        token = self.make_verify_token(uid=int(user.id), email=email_norm)
+
+        # ✅ не трогаем ORM-поля напрямую — только через repo
+        await self.repo.set_activation_token(
+            session,
+            user_id=int(user.id),
+            activation_key=token,
+            activation_sent_at=datetime.now(tz=timezone.utc),
+        )
         await session.flush()
 
-        log.info({"event": "register_success", "email": email, "user_id": user.id})
-        return user.id, token
+        log.info({"event": "register_success", "email": email_norm, "user_id": int(user.id)})
+        return int(user.id), token
 
     # --- Подтверждение e-mail ---
     async def verify_email(self, session, token: str) -> int:
@@ -75,48 +91,43 @@ class AuthService:
         uid = int(data.get("uid", 0))
 
         user = await self.repo.get_by_email(session, email=email)
-        if not user or user.id != uid:
+        if not user or int(user.id) != uid:
             raise ValueError("verify_link_bad_user")
 
-        profile = await self.repo.get_profile_by_user_id(session, user_id=user.id)
-        if profile:
-            profile.verification = True
-
-        user.activation_key = None
+        # ✅ одним проходом (update Profile + update User)
+        await self.repo.mark_email_verified_and_clear_token(session, user_id=int(user.id))
         await session.flush()
 
         log.info({"event": "verify_ok", "email": email, "uid": uid})
-        return user.id
+        return int(user.id)
 
-    # --- Аутентификация (для /auth/login или API) ---
+    # --- Аутентификация ---
     async def authenticate(self, session, *, email: str, password: str) -> str:
-        user = await self.repo.get_by_email(session, email=email.strip().lower())
+        email_norm = email.strip().lower()
+
+        user = await self.repo.get_by_email(session, email=email_norm)
         if not user:
-            log.info({"event": "auth_fail", "reason": "user_not_found", "email": email})
+            log.info({"event": "auth_fail", "reason": "user_not_found", "email": email_norm})
             raise ValueError("bad_credentials")
 
         if not verify_password(password, user.hashed_password):
-            log.info({"event": "auth_fail", "reason": "wrong_password", "email": email})
+            log.info({"event": "auth_fail", "reason": "wrong_password", "email": email_norm})
             raise ValueError("bad_credentials")
 
-        profile = await self.repo.get_profile_by_user_id(session, user_id=user.id)
+        profile = await self.repo.get_profile_by_user_id(session, user_id=int(user.id))
         email_verified = bool(profile and profile.verification)
 
         if not email_verified:
-            log.info({"event": "auth_warn_unverified", "email": email})
+            log.info({"event": "auth_warn_unverified", "email": email_norm})
 
-        # генерим JWT через общий helper
         token = create_access_token(
-            subject=email,
-            extra={
-                "uid": user.id,
-                "email_verified": email_verified,
-            },
+            subject=email_norm,
+            extra={"uid": int(user.id), "email_verified": email_verified},
         )
-        log.info({"event": "auth_ok", "email": email, "uid": user.id, "email_verified": email_verified})
+        log.info({"event": "auth_ok", "email": email_norm, "uid": int(user.id), "email_verified": email_verified})
         return token
 
-    # --- вспомогательный метод для HTML-потока (авто-логин после регистрации) ---
+    # --- для HTML-потока (авто-логин после регистрации) ---
     def make_access_token(self, *, email: str, uid: int, email_verified: bool) -> str:
         return create_access_token(
             subject=email,

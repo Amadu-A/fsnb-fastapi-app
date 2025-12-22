@@ -1,4 +1,4 @@
-# /src/core/views/auth.py
+# path: src/core/views/auth.py
 from __future__ import annotations
 
 import secrets
@@ -11,11 +11,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-from src.core.models import db_helper
 from src.app_logging import get_logger
+from src.core.dependencies import get_auth_service, get_user_repository
 from src.core.mailing.email import send_verification_email_sync
+from src.core.models import db_helper
 from src.core.services.auth_service import AuthService
-from src.crud.user_repository import UserRepository  # <-- добавили
+from src.crud.user_repository import IUserRepository
 
 router = APIRouter()
 log = get_logger("views.auth")
@@ -40,41 +41,35 @@ def _new_captcha(request: Request) -> tuple[int, int, int]:
     return a, b, s
 
 
-# ---------- LOGIN (GET) ----------
 @router.get("/auth/login", name="login_html")
 async def login_html(request: Request):
     csrf = _ensure_csrf(request)
     a, b, _ = _new_captcha(request)
     log.info({"event": "open_page", "path": "/auth/login", "method": "GET"})
-    return templates.TemplateResponse(
-        "core/login.html",
-        {"request": request, "csrf": csrf, "a": a, "b": b},
-    )
+    return templates.TemplateResponse("core/login.html", {"request": request, "csrf": csrf, "a": a, "b": b})
 
 
-# ---------- LOGIN (POST) ----------
 @router.post("/auth/login", name="login_post_html")
 async def login_post_html(
     request: Request,
     session: Annotated[AsyncSession, Depends(db_helper.session_getter)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
+    user_repo: Annotated[IUserRepository, Depends(get_user_repository)],
     email: Annotated[str, Form(...)],
     password: Annotated[str, Form(...)],
     csrf_token: Annotated[str, Form(...)],
     captcha: Annotated[int, Form(...)],
 ):
-    # CSRF
     if csrf_token != request.session.get("csrf"):
         log.info({"event": "login_fail", "reason": "csrf"})
         csrf = _ensure_csrf(request)
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/login.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "CSRF error"}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": "CSRF error"}},
             status_code=400,
         )
 
-    # Капча
     try:
         if int(captcha) != int(request.session.get("captcha_sum", -1)):
             raise ValueError
@@ -84,28 +79,21 @@ async def login_post_html(
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/login.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "Капча неверна"}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": "Капча неверна"}},
             status_code=400,
         )
 
-    service = AuthService()
-    repo = UserRepository()
     email_norm = email.strip().lower()
 
     try:
-        # Проверяем логин/пароль (важно только отсутствие исключения)
         await service.authenticate(session, email=email_norm, password=password)
 
-        # Берём модель пользователя
-        user = await repo.get_by_email(session, email=email_norm)
+        user = await user_repo.get_by_email(session, email=email_norm)
         if not user:
             raise ValueError("user_not_found_after_auth")
 
-        # КРИТИЧНО: НЕ лезем в user.profile напрямую (lazyload)!
-        # Явно читаем профиль отдельным запросом:
-        profile = await repo.get_profile_by_user_id(session, user_id=user.id)
-        email_verified = bool(getattr(profile, "verification", False))
+        profile = await user_repo.get_profile_by_user_id(session, user_id=int(user.id))
+        email_verified = bool(profile and profile.verification)
 
     except ValueError:
         log.info({"event": "login_fail", "reason": "bad_credentials_or_not_found", "email": email_norm})
@@ -113,62 +101,59 @@ async def login_post_html(
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/login.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "Неверный e-mail или пароль"}},
+            {
+                "request": request,
+                "csrf": csrf,
+                "a": a,
+                "b": b,
+                "alert": {"kind": "error", "text": "Неверный e-mail или пароль"},
+            },
             status_code=400,
         )
 
-    # Успех — кладём токен в сессию и редиректим на главную
     access_token = service.make_access_token(
         email=user.email,
-        uid=user.id,
+        uid=int(user.id),
         email_verified=email_verified,
     )
     request.session["access_token"] = access_token
     request.session["user_email"] = user.email
-    request.session["user_id"] = user.id
+    request.session["user_id"] = int(user.id)
 
     log.info({"event": "login_ok", "email": user.email, "email_verified": email_verified})
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 
-# ---------- REGISTER (GET) ----------
 @router.get("/auth/register", name="register_html")
 async def register_html(request: Request):
     csrf = _ensure_csrf(request)
     a, b, _ = _new_captcha(request)
     log.info({"event": "open_page", "path": "/auth/register", "method": "GET"})
-    return templates.TemplateResponse(
-        "core/register.html",
-        {"request": request, "csrf": csrf, "a": a, "b": b},
-    )
+    return templates.TemplateResponse("core/register.html", {"request": request, "csrf": csrf, "a": a, "b": b})
 
 
-# ---------- REGISTER (POST) ----------
 @router.post("/auth/register", name="register_post_html")
 async def register_post_html(
     request: Request,
     background: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(db_helper.session_getter)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
     email: Annotated[str, Form(...)],
     password: Annotated[str, Form(...)],
     password2: Annotated[str, Form(...)],
     csrf_token: Annotated[str, Form(...)],
     captcha: Annotated[int, Form(...)],
 ):
-    # CSRF
     if csrf_token != request.session.get("csrf"):
         log.info({"event": "register_fail", "email": email, "reason": "csrf"})
         csrf = _ensure_csrf(request)
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/register.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "CSRF error"}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": "CSRF error"}},
             status_code=400,
         )
 
-    # Капча
     try:
         if int(captcha) != int(request.session.get("captcha_sum", -1)):
             raise ValueError
@@ -178,12 +163,10 @@ async def register_post_html(
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/register.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "Капча неверна"}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": "Капча неверна"}},
             status_code=400,
         )
 
-    # Пароль
     email_norm = email.strip().lower()
     if len(password) < 8 or len(password) > 256 or password != password2:
         log.info({"event": "register_fail", "email": email_norm, "reason": "weak_or_mismatch_password"})
@@ -191,54 +174,60 @@ async def register_post_html(
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/register.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "Пароль должен быть 8..256 символов и совпадать."}},
+            {
+                "request": request,
+                "csrf": csrf,
+                "a": a,
+                "b": b,
+                "alert": {"kind": "error", "text": "Пароль должен быть 8..256 символов и совпадать."},
+            },
             status_code=400,
         )
 
-    service = AuthService()
     try:
         user_id, verify_token = await service.register_user(session, email=email_norm, password=password)
         await session.commit()
 
-        # ссылка подтверждения
         verify_link = str(request.url_for("verify_email", token=verify_token))
         log.info({"event": "verify_link", "email": email_norm, "verify_link": verify_link})
 
-        # письмо в фоне
         background.add_task(send_verification_email_sync, email_norm, verify_link)
 
-        # авто-логин
-        access_token = service.make_access_token(email=email_norm, uid=user_id, email_verified=False)
+        access_token = service.make_access_token(email=email_norm, uid=int(user_id), email_verified=False)
         request.session["access_token"] = access_token
         request.session["user_email"] = email_norm
-        request.session["user_id"] = user_id
+        request.session["user_id"] = int(user_id)
 
-        log.info({"event": "register_success", "email": email_norm, "user_id": user_id})
+        log.info({"event": "register_success", "email": email_norm, "user_id": int(user_id)})
         return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
     except ValueError as e:
-        # pre-check
         if str(e) == "email_already_exists":
             log.info({"event": "register_fail", "email": email_norm, "reason": "precheck_exists"})
             csrf = _ensure_csrf(request)
             a, b, _ = _new_captcha(request)
             return templates.TemplateResponse(
                 "core/register.html",
-                {"request": request, "csrf": csrf, "a": a, "b": b,
-                 "alert": {"kind": "error", "text": "Пользователь с таким e-mail уже существует"}},
+                {
+                    "request": request,
+                    "csrf": csrf,
+                    "a": a,
+                    "b": b,
+                    "alert": {"kind": "error", "text": "Пользователь с таким e-mail уже существует"},
+                },
                 status_code=400,
             )
+
         await session.rollback()
         log.info({"event": "register_fail", "email": email_norm, "error": str(e)})
         csrf = _ensure_csrf(request)
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/register.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": f"Ошибка регистрации: {e}"}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": f"Ошибка регистрации: {e}"}},
             status_code=400,
         )
+
     except IntegrityError as e:
         await session.rollback()
         cname = getattr(getattr(e, "orig", None), "constraint_name", None)
@@ -250,15 +239,16 @@ async def register_post_html(
             human = "Пользователь с таким e-mail уже зарегистрирован"
         elif cname == "uq_users_username" or "uq_users_username" in txt:
             human = "Такой username уже занят"
+
         log.info({"event": "register_fail", "email": email_norm, "constraint": cname, "sql_error": txt})
         csrf = _ensure_csrf(request)
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/register.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": human}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": human}},
             status_code=400,
         )
+
     except Exception as e:
         await session.rollback()
         log.info({"event": "register_fail", "email": email_norm, "error": str(e)})
@@ -266,34 +256,31 @@ async def register_post_html(
         a, b, _ = _new_captcha(request)
         return templates.TemplateResponse(
             "core/register.html",
-            {"request": request, "csrf": csrf, "a": a, "b": b,
-             "alert": {"kind": "error", "text": "Не удалось зарегистрировать пользователя"}},
+            {"request": request, "csrf": csrf, "a": a, "b": b, "alert": {"kind": "error", "text": "Не удалось зарегистрировать пользователя"}},
             status_code=400,
         )
 
 
-# ---------- VERIFY EMAIL ----------
 @router.get("/auth/verify/{token}", name="verify_email")
 async def verify_email(
     request: Request,
     token: str,
     session: Annotated[AsyncSession, Depends(db_helper.session_getter)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
 ):
-    service = AuthService()
     try:
         uid = await service.verify_email(session, token)
         await session.commit()
 
-        # если тот же пользователь в сессии — перезальём токен с флагом
         if request.session.get("user_id") == uid:
             access_token = service.make_access_token(
                 email=request.session.get("user_email", ""),
-                uid=uid,
+                uid=int(uid),
                 email_verified=True,
             )
             request.session["access_token"] = access_token
 
-        log.info({"event": "verify_ok", "uid": uid})
+        log.info({"event": "verify_ok", "uid": int(uid)})
         alert = {"kind": "success", "text": "E-mail подтвержден. Спасибо!"}
     except Exception as e:
         await session.rollback()
@@ -303,7 +290,6 @@ async def verify_email(
     return templates.TemplateResponse("core/index.html", {"request": request, "alert": alert})
 
 
-# ---------- LOGOUT ----------
 @router.post("/auth/logout", name="logout_html")
 @router.get("/auth/logout")
 async def logout_html(request: Request):

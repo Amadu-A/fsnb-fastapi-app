@@ -1,22 +1,26 @@
-# /src/core/dependencies.py
+# path: src/core/dependencies.py
 from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any, Dict
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
-from .security import decode_token
 from src.app_logging import get_logger
-from src.crud import item_repository
+from src.core.security import decode_token
+from src.core.services.auth_service import AuthService
+from src.crud.permission_repository import IPermissionRepository, PermissionRepository
+from src.crud.profile_repository import IProfileRepository, ProfileRepository
+from src.crud.user_repository import IUserRepository, UserRepository
 
-# ВАЖНО: tokenUrl должен совпадать с реальным API-роутом получения токена
-# Если у тебя токен выдаёт, например, /api/api_v1/auth/token — укажи его.
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 log = get_logger("deps")
 
 
-def get_current_subject(token: str = Depends(oauth2_scheme)) -> dict:
-    """Возвращает payload токена или 401."""
+def get_current_subject(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     try:
         payload = decode_token(token)
         return payload
@@ -25,9 +29,37 @@ def get_current_subject(token: str = Depends(oauth2_scheme)) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-        )
+        ) from e
 
 
-def get_item_repository():
-    """Dependency для работы с таблицей items (используется в fsnb_matcher)."""
-    return item_repository
+@lru_cache(maxsize=1)
+def _user_repo_singleton() -> UserRepository:
+    return UserRepository()
+
+
+def get_user_repository() -> IUserRepository:
+    return _user_repo_singleton()
+
+
+@lru_cache(maxsize=1)
+def _profile_repo_singleton() -> ProfileRepository:
+    return ProfileRepository()
+
+
+def get_profile_repository() -> IProfileRepository:
+    return _profile_repo_singleton()
+
+
+@lru_cache(maxsize=1)
+def _permission_repo_singleton() -> PermissionRepository:
+    return PermissionRepository()
+
+
+def get_permission_repository() -> IPermissionRepository:
+    return _permission_repo_singleton()
+
+
+def get_auth_service(
+    user_repo: IUserRepository = Depends(get_user_repository),
+) -> AuthService:
+    return AuthService(repo=user_repo)
