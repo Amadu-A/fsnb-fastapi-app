@@ -15,21 +15,29 @@
 
         <div class="form__control">
           {% if name in readonly_fields %}
-            <div class="admin__readonly">{{ val }}</div>
+            <div class="admin__readonly">
+              {% if fk_map.get(name) and val %}
+                <a href="{{ request.url_for('admin_model_list', slug=fk_map[name]['slug']) }}?{{ fk_map[name]['field'] }}={{ val }}">{{ val }}</a>
+              {% else %}
+                {{ val }}
+              {% endif %}
+            </div>
           {% else %}
             {% if name.startswith("is_") and (val is boolean or val in [True, False, 0, 1, '0', '1']) %}
-              {% set checked = (val == True) %}
               <label class="admin__check">
-                <input type="checkbox" name="{{ name }}"
-                       {% if checked %}checked{% endif %}
-                       {% if name == 'is_superadmin' and not can_edit_super_flag %}disabled{% endif %}>
+                <input type="checkbox" name="{{ name }}" {% if val == True %}checked{% endif %}>
                 <span>{{ name }}</span>
               </label>
-              {% if name == 'is_superadmin' and not can_edit_super_flag %}
-                <small class="admin__hint">Изменять может только суперпользователь</small>
-              {% endif %}
             {% else %}
               <input class="form__input" type="text" name="{{ name }}" value="{{ val if val is not none else '' }}">
+
+              {% if fk_map.get(name) and val %}
+                <div class="admin__fk-link">
+                  <a href="{{ request.url_for('admin_model_list', slug=fk_map[name]['slug']) }}?{{ fk_map[name]['field'] }}={{ val }}">
+                    Открыть связанную запись ({{ fk_map[name]['slug'] }}: {{ val }})
+                  </a>
+                </div>
+              {% endif %}
             {% endif %}
           {% endif %}
         </div>
