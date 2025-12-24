@@ -68,7 +68,7 @@
       showModal();
 
       try {
-        const resp = await fetch("/api/v1/fsnb/match", {
+        const resp = await fetch("/api/v1/train/review/create", {
           method: "POST",
           body: fd,
           credentials: "include",
@@ -83,19 +83,11 @@
           throw new Error(detail);
         }
 
-        const blob = await resp.blob();
-
-        const cd = resp.headers.get("Content-Disposition");
-        const name = filenameFromDisposition(cd) || "smeta.xlsx";
-
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
+        const data = await resp.json();
+        if (!data || !data.redirect_url) {
+          throw new Error("Сервер не вернул redirect_url");
+        }
+        window.location.href = data.redirect_url;
 
       } catch (err) {
         showError(err?.message ? String(err.message) : "Неизвестная ошибка");
