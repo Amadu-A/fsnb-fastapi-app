@@ -4,11 +4,12 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 from typing import Annotated, Optional, Any, Dict
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Depends, Form, status, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, update, or_
+from sqlalchemy import select, update, or_, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.sql.schema import Column
@@ -29,6 +30,13 @@ from src.crud.profile_repository import IProfileRepository
 from src.crud.user_repository import IUserRepository
 from src.admin import admin_site
 
+from src.core.utils import (
+    build_pagination,
+    coerce_value,
+    get_boolean_fields,
+    get_columns,
+    get_fk_target_table,
+)
 
 router = APIRouter()
 log = get_logger("views.admin")
@@ -189,26 +197,82 @@ async def admin_model_list(
         raise HTTPException(status_code=404, detail="Model not registered")
 
     Model = ma.model
-    stmt = select(Model)
+    cols = get_columns(Model)
 
+    # page
+    try:
+        page = int(request.query_params.get("page", "1"))
+    except Exception:
+        page = 1
+    page_size = getattr(ma, "page_size", 50) or 50
+
+    stmt = select(Model)
+    count_stmt = select(func.count()).select_from(Model)
+
+    # exact filters: любой query param совпал с колонкой -> equality
+    for key, raw in request.query_params.items():
+        if key in {"page", "q"}:
+            continue
+        if key not in cols:
+            continue
+        if raw is None or str(raw).strip() == "":
+            continue
+        val = coerce_value(cols[key], raw)
+        if val is None:
+            continue
+        stmt = stmt.where(getattr(Model, key) == val)
+        count_stmt = count_stmt.where(getattr(Model, key) == val)
+
+    # search
+    q = (q or "").strip()
     if q and ma.search_fields:
         clauses = []
         for f in ma.search_fields:
-            col = getattr(Model, f, None)
-            if col is not None:
+            if f in cols:
                 clauses.append(getattr(Model, f).ilike(f"%{q}%"))
         if clauses:
             stmt = stmt.where(or_(*clauses))
+            count_stmt = count_stmt.where(or_(*clauses))
 
+    total = (await session.execute(count_stmt)).scalar_one()
+    pagination = build_pagination(total=total, page=page, page_size=page_size)
+
+    # ordering
+    if "created_at" in cols:
+        stmt = stmt.order_by(getattr(Model, "created_at").desc())
+    elif "id" in cols:
+        stmt = stmt.order_by(getattr(Model, "id").desc())
+
+    stmt = stmt.offset(pagination.offset).limit(pagination.limit)
+    rows = (await session.execute(stmt)).scalars().all()
+
+    bool_fields = get_boolean_fields(Model)
+
+    # FK map: field -> target slug (table name), filter by id
+    fk_map: dict[str, dict[str, str]] = {}
+    for name, col in cols.items():
+        target_table = get_fk_target_table(col)
+        if not target_table:
+            continue
+        if admin_site.get(target_table):
+            fk_map[name] = {"slug": target_table, "field": "id"}
+
+    # prev/next urls with all current params
+    base_params = dict(request.query_params)
+    base_params.pop("page", None)
+
+    def make_url(p: int) -> str:
+        params = dict(base_params)
+        params["page"] = str(p)
+        return str(request.url.replace(query=urlencode(params, doseq=True)))
+
+    prev_url = make_url(pagination.prev_page) if pagination.has_prev else None
+    next_url = make_url(pagination.next_page) if pagination.has_next else None
     insp = sa_inspect(Model)
     pk_cols = insp.primary_key
-    if pk_cols:
-        stmt = stmt.order_by(pk_cols[0])
 
-    # ⚠️ Универсальная админка по любым моделям:
-    # - Для моделей без репозитория это неизбежно (иначе нужен GenericRepository).
-    # - Для User/Profile/Permission мы уже убрали прямые запросы в местах авторизации/прав.
-    rows = (await session.execute(stmt)).scalars().all()
+    has_edit = bool(pk_cols) and len(pk_cols) == 1 and pk_cols[0].key in ("id",)  # или просто len==1 и int-тип
+    edit_pk = pk_cols[0].key if has_edit else None
 
     return templates.TemplateResponse(
         "admin/model_list.html",
@@ -216,9 +280,18 @@ async def admin_model_list(
             "request": request,
             "slug": slug,
             "model_name": Model.__name__,
+            "ma": ma,
             "list_display": ma.list_display or [c.key for c in sa_inspect(Model).columns],
             "rows": rows,
-            "q": q or "",
+            "q": q,
+            "bool_fields": bool_fields,
+            "fk_map": fk_map,
+            "pagination": pagination,
+            "prev_url": prev_url,
+            "next_url": next_url,
+            "csrf": _ensure_csrf(request),
+            "has_edit": has_edit,
+            "edit_pk": edit_pk,
         },
     )
 
@@ -262,20 +335,31 @@ async def admin_model_edit_get(
     if not ma:
         raise HTTPException(status_code=404, detail="Model not registered")
 
-    Model = ma.model
+    # (если ты добавлял can_edit) — защита read-only
+    if hasattr(ma, "can_edit") and not ma.can_edit:
+        raise HTTPException(status_code=403, detail="Read-only model")
 
-    # ⚠️ Универсальная админка:
-    # для произвольной модели без репозитория используем session.get как исключение.
+    Model = ma.model
     obj = await session.get(Model, obj_id)
     if not obj:
         return RedirectResponse(url=f"/admin/m/{slug}", status_code=status.HTTP_303_SEE_OTHER)
 
     csrf = _ensure_csrf(request)
 
-    # Права на редактирование супер-флага (Permission.is_superadmin)
     me_prof = await profile_repo.get_by_user_id(session, user_id=int(me.id))
     me_perm = await permission_repo.get_by_profile_id(session, profile_id=int(me_prof.id)) if me_prof else None
     can_edit_super_flag = bool(me_perm and getattr(me_perm, "is_superadmin", False))
+
+    # ✅ fk_map для ссылок на связанные таблицы
+    cols = get_columns(Model)
+    fk_map: dict[str, dict[str, str]] = {}
+    for name, col in cols.items():
+        target_table = get_fk_target_table(col)
+        if not target_table:
+            continue
+        # в админке slug обычно = __tablename__ => target_table
+        if admin_site.get(target_table):
+            fk_map[name] = {"slug": target_table, "field": "id"}
 
     return templates.TemplateResponse(
         "admin/model_edit.html",
@@ -289,6 +373,7 @@ async def admin_model_edit_get(
             "labels": ma.field_labels,
             "csrf": csrf,
             "can_edit_super_flag": can_edit_super_flag,
+            "fk_map": fk_map,  # ✅ ВОТ ЭТОГО НЕ ХВАТАЛО
         },
     )
 
@@ -313,6 +398,8 @@ async def admin_model_edit_post(
     ma = admin_site.get(slug)
     if not ma:
         raise HTTPException(status_code=404, detail="Model not registered")
+    if hasattr(ma, "can_edit") and not ma.can_edit:
+        raise HTTPException(status_code=403, detail="Read-only model")
 
     Model = ma.model
 
@@ -333,12 +420,11 @@ async def admin_model_edit_post(
     # _ = profile_repo  # если надо убрать warning "unused" (никаких await!)
 
     # Права на редактирование супер-флага
-    me_prof = (await session.execute(select(Profile).where(Profile.user_id == me.id))).scalar_one_or_none()
+    me_prof = await profile_repo.get_by_user_id(session, user_id=int(me.id))
     me_perm = None
     if me_prof:
-        me_perm = (
-            await session.execute(select(Permission).where(Permission.profile_id == me_prof.id))).scalar_one_or_none()
-    actor_is_super = bool(me_perm and me_perm.is_superadmin)
+        me_perm = await permission_repo.get_by_profile_id(session, profile_id=int(me_prof.id)) if me_prof else None
+    actor_is_super = bool(me_perm and getattr(me_perm, "is_superadmin", False))
 
     for f in ma.form_fields:
         if f not in columns:
@@ -369,3 +455,32 @@ async def admin_model_edit_post(
         log.info({"event": "admin_model_update", "slug": slug, "obj_id": obj_id, **vals})
 
     return RedirectResponse(url=f"/admin/m/{slug}/{obj_id}/edit", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/admin/m/{slug}/clear", name="admin_model_clear")
+async def admin_model_clear(
+    request: Request,
+    slug: str,
+    session: Annotated[AsyncSession, Depends(db_helper.session_getter)],
+    user_repo: Annotated[IUserRepository, Depends(get_user_repository)],
+    profile_repo: Annotated[IProfileRepository, Depends(get_profile_repository)],
+    permission_repo: Annotated[IPermissionRepository, Depends(get_permission_repository)],
+    csrf_token: Annotated[str, Form(...)],
+):
+    me = await _require_admin(request, session, user_repo, profile_repo, permission_repo)
+    if not me:
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    if csrf_token != request.session.get("admin_csrf"):
+        raise HTTPException(status_code=400, detail="CSRF error")
+
+    ma = admin_site.get(slug)
+    if not ma:
+        raise HTTPException(status_code=404, detail="Model not registered")
+    if not getattr(ma, "can_delete", False):
+        raise HTTPException(status_code=403, detail="Clear not allowed")
+
+    await session.execute(delete(ma.model))
+    await session.commit()
+
+    return RedirectResponse(url=f"/admin/m/{slug}", status_code=status.HTTP_303_SEE_OTHER)

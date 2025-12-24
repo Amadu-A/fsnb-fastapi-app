@@ -1,16 +1,48 @@
 <!-- path: templates/admin/model_list.html -->
 {% extends "core/base.html" %}
+
 {% block content %}
   <h1 class="title">Модель: {{ model_name }}</h1>
 
-  <form class="form form--search" method="get" action="{{ request.url_for('admin_model_list', slug=slug) }}">
-    <div class="form__row form__row--compact">
-      <div class="form__control">
-        <input class="form__input" type="text" name="q" value="{{ q }}" placeholder="Поиск..." />
-      </div>
-      <button class="btn btn--primary" type="submit">Найти</button>
+  <div class="admin-list__toolbar">
+    <div class="admin-list__toolbar-row">
+      {# Поиск + булевы фильтры #}
+      <form class="form form--search" method="get" action="{{ request.url_for('admin_model_list', slug=slug) }}">
+        <div class="form__row form__row--compact">
+          <div class="form__control">
+            <input class="form__input" type="text" name="q" value="{{ q }}" placeholder="Поиск..." />
+          </div>
+
+          {# Булевы фильтры: all/true/false #}
+          {% for bf in bool_fields %}
+            {% set cur = request.query_params.get(bf) %}
+            <div class="form__control">
+              <select class="form__input" name="{{ bf }}">
+                <option value="" {% if not cur %}selected{% endif %}>{{ bf }}: all</option>
+                <option value="true" {% if cur == 'true' or cur == '1' %}selected{% endif %}>{{ bf }}: true</option>
+                <option value="false" {% if cur == 'false' or cur == '0' %}selected{% endif %}>{{ bf }}: false</option>
+              </select>
+            </div>
+          {% endfor %}
+
+          <button class="btn btn--primary" type="submit">Применить</button>
+        </div>
+      </form>
+
+      {# Очистка таблицы — отдельная форма (нельзя вкладывать form в form) #}
+      {% if ma.can_delete %}
+        <form
+          method="post"
+          action="{{ request.url_for('admin_model_clear', slug=slug) }}"
+          class="admin-list__clear-form"
+          data-confirm="Удалить ВСЕ записи из '{{ slug }}'? Это действие необратимо."
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf }}">
+          <button class="btn btn--danger" type="submit">Очистить таблицу</button>
+        </form>
+      {% endif %}
     </div>
-  </form>
+  </div>
 
   <div class="table-wrap admin__table">
     <table class="table">
@@ -22,21 +54,67 @@
           <th></th>
         </tr>
       </thead>
+
       <tbody>
         {% for row in rows %}
           <tr>
             {% for f in list_display %}
-              <td>{{ attr(row, f) }}</td>
+              <td>
+                {% set v = attr(row, f) %}
+                {% if fk_map.get(f) and v %}
+                  <a href="{{ request.url_for('admin_model_list', slug=fk_map[f]['slug']) }}?{{ fk_map[f]['field'] }}={{ v }}">{{ v }}</a>
+                {% else %}
+                  {{ v }}
+                {% endif %}
+              </td>
             {% endfor %}
+
             <td>
-              <a class="btn btn--xs" href="{{ request.url_for('admin_model_edit', slug=slug, obj_id=attr(row, 'id')) }}">Edit</a>
+              {# --- Edit button guard: works for id or custom PK field --- #}
+              {% set pk_name = edit_pk if edit_pk is defined and edit_pk else 'id' %}
+              {% set pk_val = attr(row, pk_name) %}
+              {% set can_edit_row = (ma.can_edit and ma.form_fields) and (pk_val is not none) and (has_edit is not defined or has_edit) %}
+
+              {% if can_edit_row and pk_name == 'id' %}
+                <a class="btn btn--xs"
+                   href="{{ request.url_for('admin_model_edit', slug=slug, obj_id=pk_val) }}">Edit</a>
+              {% elif can_edit_row and pk_name != 'id' %}
+                {# Если ты когда-нибудь добавишь edit по другому PK, роут надо будет расширить.
+                   Сейчас этот кейс просто прячем (чтобы не было битых ссылок). #}
+                <span class="muted">—</span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
+
         {% if not rows %}
           <tr><td colspan="{{ list_display|length + 1 }}">Пусто</td></tr>
         {% endif %}
       </tbody>
     </table>
   </div>
+
+  {% if pagination.pages > 1 %}
+    <nav class="pagination" aria-label="Pagination">
+      <div class="pagination__info">
+        Страница {{ pagination.page }} из {{ pagination.pages }} · всего: {{ pagination.total }}
+      </div>
+
+      <div class="pagination__controls">
+        {% if prev_url %}
+          <a class="btn btn--xs" href="{{ prev_url }}">← Предыдущие {{ pagination.page_size }}</a>
+        {% else %}
+          <span class="btn btn--xs btn--disabled">← Предыдущие {{ pagination.page_size }}</span>
+        {% endif %}
+
+        {% if next_url %}
+          <a class="btn btn--xs" href="{{ next_url }}">Следующие {{ pagination.page_size }} →</a>
+        {% else %}
+          <span class="btn btn--xs btn--disabled">Следующие {{ pagination.page_size }} →</span>
+        {% endif %}
+      </div>
+    </nav>
+  {% endif %}
 {% endblock %}

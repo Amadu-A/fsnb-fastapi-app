@@ -88,6 +88,11 @@ body {
   color: #fff;
 }
 
+.btn--disabled {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 .btn--xs {
   padding: 4px 8px;
   font-size: 12px;

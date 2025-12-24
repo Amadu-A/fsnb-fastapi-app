@@ -23,6 +23,9 @@ class TrainingRunRow(Base):
 
     __tablename__ = "training_run_rows"
 
+    # ✅ ВАЖНО: отключаем общий Base.id (если он есть в Base/миксине)
+    id = None
+
     run_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("training_runs.id", ondelete="CASCADE"),
@@ -41,7 +44,6 @@ class TrainingRunRow(Base):
         server_default=func.now(),
     )
 
-    # Связи
     run = relationship("TrainingRun", back_populates="rows")
     row = relationship("FeedbackRow", back_populates="training_links")
 
