@@ -1,19 +1,30 @@
 // path: static/js/fsnb_matcher.js
-
 (function () {
-  function $(id) { return document.getElementById(id); }
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function show(el) {
+    if (!el) return;
+    el.classList.remove("u-hidden");
+  }
+
+  function hide(el) {
+    if (!el) return;
+    el.classList.add("u-hidden");
+  }
 
   function showModal() {
     const m = $("fsnb-modal");
     if (!m) return;
-    m.style.display = "block";
+    show(m);
     m.setAttribute("aria-hidden", "false");
   }
 
   function hideModal() {
     const m = $("fsnb-modal");
     if (!m) return;
-    m.style.display = "none";
+    hide(m);
     m.setAttribute("aria-hidden", "true");
   }
 
@@ -21,22 +32,14 @@
     const el = $("fsnb-error");
     if (!el) return;
     el.textContent = text;
-    el.style.display = "block";
+    show(el);
   }
 
   function clearError() {
     const el = $("fsnb-error");
     if (!el) return;
     el.textContent = "";
-    el.style.display = "none";
-  }
-
-  function filenameFromDisposition(disposition) {
-    if (!disposition) return null;
-    // attachment; filename="smeta.xlsx"
-    const m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
-    if (!m) return null;
-    try { return decodeURIComponent(m[1].replace(/"/g, "")); } catch { return m[1].replace(/"/g, ""); }
+    hide(el);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -68,7 +71,7 @@
       showModal();
 
       try {
-        const resp = await fetch("/api/v1/fsnb/match", {
+        const resp = await fetch("/api/v1/train/review/create", {
           method: "POST",
           body: fd,
           credentials: "include",
@@ -83,20 +86,12 @@
           throw new Error(detail);
         }
 
-        const blob = await resp.blob();
+        const data = await resp.json();
+        if (!data || !data.redirect_url) {
+          throw new Error("Сервер не вернул redirect_url");
+        }
 
-        const cd = resp.headers.get("Content-Disposition");
-        const name = filenameFromDisposition(cd) || "smeta.xlsx";
-
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-
+        window.location.href = data.redirect_url;
       } catch (err) {
         showError(err?.message ? String(err.message) : "Неизвестная ошибка");
       } finally {

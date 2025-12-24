@@ -13,7 +13,7 @@ from typing import (
     Tuple,
 )
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, or_, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -83,6 +83,13 @@ class IItemRepository(Protocol):
         item_ids: Sequence[int],
     ) -> Dict[int, Tuple[str, Optional[str], Optional[str]]]: ...
 
+    async def search_items(
+        self,
+        session: AsyncSession,
+        *,
+        query: str,
+        limit: int = 20,
+    ) -> List[Item]: ...
 
 class ItemRepository(IItemRepository):
     """
@@ -247,3 +254,39 @@ class ItemRepository(IItemRepository):
                 code if code is not None else None,
             )
         return out
+
+    async def search_items(
+            self,
+            session: AsyncSession,
+            *,
+            query: str,
+            limit: int = 20,
+    ) -> List[Item]:
+        """
+        Быстрый поиск items для UI (dropdown/AJAX).
+
+        Ищем по:
+          - code ILIKE %q%
+          - name ILIKE %q%
+
+        Сортируем так, чтобы совпадения по code были выше,
+        а дальше — по code (стабильно).
+        """
+        q = (query or "").strip()
+        if len(q) < 2:
+            return []
+
+        like = f"%{q}%"
+        stmt = (
+            select(Item)
+            .where(or_(Item.code.ilike(like), Item.name.ilike(like)))
+            .order_by(
+                case((Item.code.ilike(like), 0), else_=1),
+                Item.code.asc(),
+                Item.id.asc(),
+            )
+            .limit(int(limit))
+        )
+
+        res = await session.execute(stmt)
+        return list(res.scalars().all())

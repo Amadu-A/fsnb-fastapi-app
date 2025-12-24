@@ -1,19 +1,31 @@
-<!-- /templates/admin/profile_edit.html -->
+<!-- path: templates/admin/profile_edit.html -->
 {% extends "core/base.html" %}
 {% block title %}Admin — Edit Profile{% endblock %}
 
 {% block content %}
-  <h2>Profile #{{ profile.id }} (user_id={{ profile.user_id }})</h2>
-  <form method="post" action="{{ request.url_for('admin_profile_edit_post', profile_id=profile.id) }}">
+  <h2 class="title">Profile #{{ profile.id }} (user_id={{ profile.user_id }})</h2>
+
+  <form class="form" method="post" action="{{ request.url_for('admin_profile_edit_post', profile_id=profile.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
 
-    <div class="form-row"><label>Nickname</label><input name="nickname" value="{{ profile.nickname or '' }}"></div>
-    <div class="form-row"><label>First name</label><input name="first_name" value="{{ profile.first_name or '' }}"></div>
-    <div class="form-row"><label>Second name</label><input name="second_name" value="{{ profile.second_name or '' }}"></div>
-    <div class="form-row"><label>Phone</label><input name="phone" value="{{ profile.phone or '' }}"></div>
-    <div class="form-row"><label>E-mail</label><input name="email" type="email" value="{{ profile.email or '' }}"></div>
-    <div class="form-row"><label>Verified</label><input name="verification" type="checkbox" {% if profile.verification %}checked{% endif %}></div>
+    <div class="form__row"><label class="form__label">Nickname</label><div class="form__control"><input class="form__input" name="nickname" value="{{ profile.nickname or '' }}"></div></div>
+    <div class="form__row"><label class="form__label">First name</label><div class="form__control"><input class="form__input" name="first_name" value="{{ profile.first_name or '' }}"></div></div>
+    <div class="form__row"><label class="form__label">Second name</label><div class="form__control"><input class="form__input" name="second_name" value="{{ profile.second_name or '' }}"></div></div>
+    <div class="form__row"><label class="form__label">Phone</label><div class="form__control"><input class="form__input" name="phone" value="{{ profile.phone or '' }}"></div></div>
+    <div class="form__row"><label class="form__label">E-mail</label><div class="form__control"><input class="form__input" name="email" type="email" value="{{ profile.email or '' }}"></div></div>
 
-    <button class="btn btn-primary" type="submit">Save</button>
+    <div class="form__row">
+      <label class="form__label">Verified</label>
+      <div class="form__control">
+        <label class="admin__check">
+          <input name="verification" type="checkbox" {% if profile.verification %}checked{% endif %}>
+          <span>verification</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit">Save</button>
+    </div>
   </form>
 {% endblock %}

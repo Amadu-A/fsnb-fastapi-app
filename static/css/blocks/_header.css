@@ -1,0 +1,38 @@
+/* path: static/css/blocks/_header.css */
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.header__brand {
+  font-weight: 700;
+}
+
+.header__nav-list {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.header__nav-item {
+  display: flex;
+  align-items: center;
+}
+
+.header__logout-btn {
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}

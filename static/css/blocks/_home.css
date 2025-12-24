@@ -1,0 +1,8 @@
+/* path: static/css/blocks/_home.css */
+.home__verify {
+  margin: 0.5rem 0 1rem;
+}
+
+.home__link {
+  margin: 0 0 var(--gap);
+}

@@ -1,22 +1,25 @@
-<!-- /templates/users/list.html -->
+<!-- path: templates/users/list.html -->
 {% extends "core/base.html" %}
 {% block title %}Пользователи — fsnb-fastapi{% endblock %}
 
 {% block content %}
-  <h2>Пользователи</h2>
-  <table class="table">
-    <thead>
-      <tr><th>ID</th><th>Email</th><th>Username</th><th>Active</th></tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-        <tr>
-          <td>{{ u.id }}</td>
-          <td>{{ u.email }}</td>
-          <td>{{ u.username or '' }}</td>
-          <td>{{ '✓' if u.is_active else '—' }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <h2 class="title">Пользователи</h2>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>ID</th><th>Email</th><th>Username</th><th>Active</th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.username or '' }}</td>
+            <td>{{ '✓' if u.is_active else '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}

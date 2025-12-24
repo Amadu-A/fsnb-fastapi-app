@@ -1,31 +1,40 @@
+<!-- path: templates/core/login.html -->
 {% extends "core/base.html" %}
 {% block title %}Вход — fsnb-fastapi{% endblock %}
 
 {% block content %}
-  <h2>Вход</h2>
+  <h2 class="title">Вход</h2>
 
   {% if alert %}
-    <div class="alert {{ alert.kind }}">{{ alert.text }}</div>
+    <div class="alert alert--{{ alert.kind }}">{{ alert.text }}</div>
   {% endif %}
 
-  <form method="post" action="{{ request.url_for('login_post_html') }}">
+  <form class="form" method="post" action="{{ request.url_for('login_post_html') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf }}" />
 
-    <div class="form-row">
-      <label>E-mail</label>
-      <input type="email" name="email" required placeholder="email@domain.tld" />
+    <div class="form__row">
+      <label class="form__label">E-mail</label>
+      <div class="form__control">
+        <input class="form__input" type="email" name="email" required placeholder="email@domain.tld" />
+      </div>
     </div>
 
-    <div class="form-row">
-      <label>Пароль</label>
-      <input type="password" name="password" required placeholder="********" />
+    <div class="form__row">
+      <label class="form__label">Пароль</label>
+      <div class="form__control">
+        <input class="form__input" type="password" name="password" required placeholder="********" />
+      </div>
     </div>
 
-    <div class="form-row">
-      <label>Капча: {{ a }} + {{ b }} = ?</label>
-      <input type="number" name="captcha" required />
+    <div class="form__row">
+      <label class="form__label">Капча: {{ a }} + {{ b }} = ?</label>
+      <div class="form__control">
+        <input class="form__input" type="number" name="captcha" required />
+      </div>
     </div>
 
-    <button class="btn btn-primary" type="submit">Войти</button>
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit">Войти</button>
+    </div>
   </form>
 {% endblock %}

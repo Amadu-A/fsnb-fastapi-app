@@ -1,0 +1,33 @@
+<!-- path: src/templates/train/review_upload.html -->
+{% extends "core/base.html" %}
+{% block title %}Review — Upload{% endblock %}
+
+{% block content %}
+  <h2 class="title">Ревью спецификации</h2>
+
+  {% if alert %}
+    <div class="alert alert--{{ alert.kind }}">{{ alert.text }}</div>
+  {% endif %}
+
+  <form class="form" method="post" action="/train/review" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+    <div class="form__row">
+      <label class="form__label">JSON спецификация</label>
+      <div class="form__control">
+        <input class="form__input" type="file" name="spec_file" accept="application/json,.json" required>
+      </div>
+    </div>
+
+    <div class="form__row">
+      <label class="form__label">Top-K кандидатов</label>
+      <div class="form__control">
+        <input class="form__input" type="number" name="top_k" value="5" min="1" max="20">
+      </div>
+    </div>
+
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit">Открыть таблицу</button>
+    </div>
+  </form>
+{% endblock %}

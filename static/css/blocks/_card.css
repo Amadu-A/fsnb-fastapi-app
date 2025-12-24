@@ -1,0 +1,8 @@
+/* path: static/css/blocks/_card.css */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}

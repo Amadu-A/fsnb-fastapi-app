@@ -1,27 +1,43 @@
-<!-- /templates/core/register.html -->
+<!-- path: templates/core/register.html -->
 {% extends "core/base.html" %}
 {% block title %}Регистрация — fsnb-fastapi{% endblock %}
 
 {% block content %}
-  <h2>Регистрация</h2>
-  <form method="post" action="{{ request.url_for('register_post_html') }}">
+  <h2 class="title">Регистрация</h2>
+
+  <form class="form" method="post" action="{{ request.url_for('register_post_html') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf }}" />
-    <div class="form-row">
-      <label>E-mail</label>
-      <input name="email" type="email" required placeholder="email@domain.tld" />
+
+    <div class="form__row">
+      <label class="form__label">E-mail</label>
+      <div class="form__control">
+        <input class="form__input" name="email" type="email" required placeholder="email@domain.tld" />
+      </div>
     </div>
-    <div class="form-row">
-      <label>Пароль</label>
-      <input name="password" type="password" minlength="8" maxlength="256" required placeholder="********" />
+
+    <div class="form__row">
+      <label class="form__label">Пароль</label>
+      <div class="form__control">
+        <input class="form__input" name="password" type="password" minlength="8" maxlength="256" required placeholder="********" />
+      </div>
     </div>
-    <div class="form-row">
-      <label>Повтор пароля</label>
-      <input name="password2" type="password" minlength="8" maxlength="256" required placeholder="********" />
+
+    <div class="form__row">
+      <label class="form__label">Повтор пароля</label>
+      <div class="form__control">
+        <input class="form__input" name="password2" type="password" minlength="8" maxlength="256" required placeholder="********" />
+      </div>
     </div>
-    <div class="form-row">
-      <label>Капча: {{ a }} + {{ b }} = ?</label>
-      <input name="captcha" type="number" required />
+
+    <div class="form__row">
+      <label class="form__label">Капча: {{ a }} + {{ b }} = ?</label>
+      <div class="form__control">
+        <input class="form__input" name="captcha" type="number" required />
+      </div>
     </div>
-    <button class="btn btn-primary" type="submit">Зарегистрироваться</button>
+
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit">Зарегистрироваться</button>
+    </div>
   </form>
 {% endblock %}

@@ -1,17 +1,18 @@
+<!-- path: templates/admin/index.html -->
 {% extends "core/base.html" %}
 {% block content %}
-<h1>Админка</h1>
+  <h1 class="title">Админка</h1>
 
-<div class="card">
-  <h3>Зарегистрированные модели</h3>
-  <ul>
-    {% for m in models %}
-      <li>
-        <a href="{{ request.url_for('admin_model_list', slug=m.slug) }}">
-          {{ m.model_name }} ({{ m.slug }})
-        </a>
-      </li>
-    {% endfor %}
-  </ul>
-</div>
+  <div class="card admin">
+    <h3 class="admin__subtitle">Зарегистрированные модели</h3>
+    <ul class="admin__model-list">
+      {% for m in models %}
+        <li class="admin__model-item">
+          <a href="{{ request.url_for('admin_model_list', slug=m.slug) }}">
+            {{ m.model_name }} ({{ m.slug }})
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
 {% endblock %}

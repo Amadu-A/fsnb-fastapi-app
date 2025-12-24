@@ -53,7 +53,7 @@ DEFAULT_IGNORE_GLOBS: List[str] = [
     ".git", ".idea", ".vscode", ".mypy_cache", ".pytest_cache",
     ".ruff_cache", ".cache", ".tox",
     "node_modules", "dist", "build", ".next", ".nuxt", ".turbo",
-    "*.egg-info", "models",
+    "*.egg-info", "weights",
 ]
 
 # Каталоги, которые игнорируем только на верхнем уровне корня проекта

@@ -1,0 +1,88 @@
+<!-- path: src/templates/train/review_table.html -->
+{% extends "core/base.html" %}
+{% block title %}Review — Table{% endblock %}
+
+{% block head_extra %}
+  {{ super() }}
+  <script src="{{ request.url_for('static', path='js/train_review.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+  <h2 class="title">Ревью (сохранение + Excel по кнопке “Сформировать”)</h2>
+
+  <div id="reviewSourceName" data-source-name="{{ source_name|tojson|safe }}" class="u-hidden"></div>
+
+  <div class="review__actions">
+    <button class="btn btn--primary" id="btnCommit">Сформировать (Excel) + сохранить метки</button>
+  </div>
+
+  <div class="table-wrap review__table-wrap">
+    <table class="table review__table" id="reviewTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Caption</th>
+          <th>FSNB (выбор)</th>
+          <th>FSNB code</th>
+          <th>Units</th>
+          <th>FSNB Units</th>
+          <th>Qty</th>
+          <th>Label</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr data-row-idx="{{ r.row_idx }}">
+            <td>{{ r.row_idx + 1 }}</td>
+            <td class="review__caption">{{ r.caption }}</td>
+
+            <td class="review__select-cell">
+              <select class="review__select js-fsnb-select">
+                <option value="">— нет (none_match) —</option>
+                {% for c in r.candidates %}
+                  <option
+                    value="{{ c.id }}"
+                    data-code="{{ c.code or '' }}"
+                    data-unit="{{ c.unit or '' }}"
+                    {% if c.id == r.selected_item_id %}selected{% endif %}
+                  >
+                    {{ c.code or '' }} — {{ c.name or '' }} ({{ c.unit or '' }})
+                    {% if c.score is not none %}[{{ "%.3f"|format(c.score) }}]{% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+
+              <div class="review__search">
+                <input class="form__input js-fsnb-search" placeholder="Поиск по items (код/текст)..." />
+                <div class="review__search-results js-fsnb-search-results u-hidden"></div>
+              </div>
+            </td>
+
+            <td class="js-cell-code"></td>
+            <td>{{ r.units or '' }}</td>
+            <td class="js-cell-fsnb-unit"></td>
+            <td>{{ r.qty or '' }}</td>
+
+            <td>
+              <select class="review__label-select js-label-select">
+                {% set labels = ["gold","negative","skip","ambiguous","none_match"] %}
+                {% for lb in labels %}
+                  <option value="{{ lb }}" {% if lb == r.label %}selected{% endif %}>{{ lb }}</option>
+                {% endfor %}
+              </select>
+            </td>
+
+            <td>
+              <input class="form__input review__note js-note-input" value="{{ r.note or '' }}">
+            </td>
+
+            <td class="u-hidden">
+              <span class="js-auto-id">{{ r.auto_selected_item_id or "" }}</span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
