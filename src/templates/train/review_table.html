@@ -2,276 +2,87 @@
 {% extends "core/base.html" %}
 {% block title %}Review — Table{% endblock %}
 
+{% block head_extra %}
+  {{ super() }}
+  <script src="{{ request.url_for('static', path='js/train_review.js') }}" defer></script>
+{% endblock %}
+
 {% block content %}
-<h2>Ревью (сохранение + Excel по кнопке “Сформировать”)</h2>
+  <h2 class="title">Ревью (сохранение + Excel по кнопке “Сформировать”)</h2>
 
-<div style="margin: 12px 0;">
-  <button class="btn btn-primary" id="btnCommit">Сформировать (Excel) + сохранить метки</button>
-</div>
+  <div id="reviewSourceName" data-source-name="{{ source_name|tojson|safe }}" class="u-hidden"></div>
 
-<table class="table" id="reviewTable" style="width:100%; border-collapse: collapse;">
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Caption</th>
-      <th>FSNB (выбор)</th>
-      <th>FSNB code</th>
-      <th>Units</th>
-      <th>FSNB Units</th>
-      <th>Qty</th>
-      <th>Label</th>
-      <th>Note</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for r in rows %}
-    <tr data-row-idx="{{ r.row_idx }}">
-      <td>{{ r.row_idx + 1 }}</td>
-      <td style="max-width:520px;">{{ r.caption }}</td>
+  <div class="review__actions">
+    <button class="btn btn--primary" id="btnCommit">Сформировать (Excel) + сохранить метки</button>
+  </div>
 
-      <td style="min-width:420px;">
-        <select class="fsnb-select" style="max-height:100px;">
-          <option value="">— нет (none_match) —</option>
-          {% for c in r.candidates %}
-            <option
-              value="{{ c.id }}"
-              data-code="{{ c.code or '' }}"
-              data-unit="{{ c.unit or '' }}"
-              {% if c.id == r.selected_item_id %}selected{% endif %}
-            >
-              {{ c.code or '' }} — {{ c.name or '' }} ({{ c.unit or '' }})
-              {% if c.score is not none %}[{{ "%.3f"|format(c.score) }}]{% endif %}
-            </option>
-          {% endfor %}
-        </select>
+  <div class="table-wrap review__table-wrap">
+    <table class="table review__table" id="reviewTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Caption</th>
+          <th>FSNB (выбор)</th>
+          <th>FSNB code</th>
+          <th>Units</th>
+          <th>FSNB Units</th>
+          <th>Qty</th>
+          <th>Label</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr data-row-idx="{{ r.row_idx }}">
+            <td>{{ r.row_idx + 1 }}</td>
+            <td class="review__caption">{{ r.caption }}</td>
 
-        <div style="margin-top:6px;">
-          <input class="fsnb-search" placeholder="Поиск по items (код/текст)..." style="width:100%;">
-          <div class="fsnb-search-results" style="border:1px solid #333; max-height:100px; overflow:auto; display:none;"></div>
-        </div>
-      </td>
+            <td class="review__select-cell">
+              <select class="review__select js-fsnb-select">
+                <option value="">— нет (none_match) —</option>
+                {% for c in r.candidates %}
+                  <option
+                    value="{{ c.id }}"
+                    data-code="{{ c.code or '' }}"
+                    data-unit="{{ c.unit or '' }}"
+                    {% if c.id == r.selected_item_id %}selected{% endif %}
+                  >
+                    {{ c.code or '' }} — {{ c.name or '' }} ({{ c.unit or '' }})
+                    {% if c.score is not none %}[{{ "%.3f"|format(c.score) }}]{% endif %}
+                  </option>
+                {% endfor %}
+              </select>
 
-      <td class="cell-code"></td>
-      <td>{{ r.units or '' }}</td>
-      <td class="cell-fsnb-unit"></td>
-      <td>{{ r.qty or '' }}</td>
+              <div class="review__search">
+                <input class="form__input js-fsnb-search" placeholder="Поиск по items (код/текст)..." />
+                <div class="review__search-results js-fsnb-search-results u-hidden"></div>
+              </div>
+            </td>
 
-      <td>
-        <select class="label-select">
-          {% set labels = ["gold","negative","skip","ambiguous","none_match"] %}
-          {% for lb in labels %}
-            <option value="{{ lb }}" {% if lb == r.label %}selected{% endif %}>{{ lb }}</option>
-          {% endfor %}
-        </select>
-      </td>
+            <td class="js-cell-code"></td>
+            <td>{{ r.units or '' }}</td>
+            <td class="js-cell-fsnb-unit"></td>
+            <td>{{ r.qty or '' }}</td>
 
-      <td>
-        <input class="note-input" style="width:220px;" value="{{ r.note or '' }}">
-      </td>
+            <td>
+              <select class="review__label-select js-label-select">
+                {% set labels = ["gold","negative","skip","ambiguous","none_match"] %}
+                {% for lb in labels %}
+                  <option value="{{ lb }}" {% if lb == r.label %}selected{% endif %}>{{ lb }}</option>
+                {% endfor %}
+              </select>
+            </td>
 
-      <td style="display:none;">
-        <span class="auto-id">{{ r.auto_selected_item_id or "" }}</span>
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+            <td>
+              <input class="form__input review__note js-note-input" value="{{ r.note or '' }}">
+            </td>
 
-<script>
-(function() {
-  const sourceName = {{ source_name|tojson }};
-
-  const rows = Array.from(document.querySelectorAll('#reviewTable tbody tr')).map(tr => {
-    const rowIdx = parseInt(tr.getAttribute('data-row-idx'), 10);
-    const caption = tr.children[1].innerText;
-    const units = tr.children[4].innerText.trim() || null;
-    const qty = tr.children[6].innerText.trim() || null;
-
-    const fsnbSelect = tr.querySelector('.fsnb-select');
-    const labelSelect = tr.querySelector('.label-select');
-    const noteInput = tr.querySelector('.note-input');
-    const autoId = tr.querySelector('.auto-id').innerText.trim();
-
-    const selectedId = fsnbSelect.value ? parseInt(fsnbSelect.value, 10) : null;
-
-    return {
-      row_idx: rowIdx,
-      caption: caption,
-      units: units,
-      qty: qty,
-      label: labelSelect.value,
-      selected_item_id: selectedId,
-      auto_selected_item_id: autoId ? parseInt(autoId, 10) : null,
-      negatives: [],
-      note: noteInput.value || null,
-    };
-  });
-
-  function findRow(rowIdx) {
-    return rows.find(r => r.row_idx === rowIdx);
-  }
-
-  function updateMeta(tr, optionEl) {
-    const codeCell = tr.querySelector('.cell-code');
-    const unitCell = tr.querySelector('.cell-fsnb-unit');
-    if (!optionEl) {
-      codeCell.innerText = '';
-      unitCell.innerText = '';
-      return;
-    }
-    codeCell.innerText = optionEl.getAttribute('data-code') || '';
-    unitCell.innerText = optionEl.getAttribute('data-unit') || '';
-  }
-
-  // init meta
-  document.querySelectorAll('#reviewTable tbody tr').forEach(tr => {
-    const sel = tr.querySelector('.fsnb-select');
-    const opt = sel.options[sel.selectedIndex];
-    updateMeta(tr, opt && opt.value ? opt : null);
-  });
-
-  // top-K change
-  document.querySelectorAll('.fsnb-select').forEach(sel => {
-    sel.addEventListener('change', (e) => {
-      const tr = e.target.closest('tr');
-      const rowIdx = parseInt(tr.getAttribute('data-row-idx'), 10);
-      const r = findRow(rowIdx);
-
-      const nextSelected = e.target.value ? parseInt(e.target.value, 10) : null;
-
-      if (r.auto_selected_item_id && nextSelected && nextSelected !== r.auto_selected_item_id) {
-        if (!r.negatives.includes(r.auto_selected_item_id)) {
-          r.negatives.push(r.auto_selected_item_id);
-        }
-        r.label = 'gold';
-        tr.querySelector('.label-select').value = 'gold';
-      }
-
-      if (!nextSelected) {
-        r.label = 'none_match';
-        tr.querySelector('.label-select').value = 'none_match';
-      }
-
-      r.selected_item_id = nextSelected;
-      updateMeta(tr, e.target.value ? e.target.options[e.target.selectedIndex] : null);
-    });
-  });
-
-  // label change
-  document.querySelectorAll('.label-select').forEach(sel => {
-    sel.addEventListener('change', (e) => {
-      const tr = e.target.closest('tr');
-      const rowIdx = parseInt(tr.getAttribute('data-row-idx'), 10);
-      const r = findRow(rowIdx);
-      r.label = e.target.value;
-    });
-  });
-
-  // note change
-  document.querySelectorAll('.note-input').forEach(inp => {
-    inp.addEventListener('input', (e) => {
-      const tr = e.target.closest('tr');
-      const rowIdx = parseInt(tr.getAttribute('data-row-idx'), 10);
-      const r = findRow(rowIdx);
-      r.note = e.target.value || null;
-    });
-  });
-
-  // AJAX search
-  document.querySelectorAll('#reviewTable tbody tr').forEach(tr => {
-    const searchInput = tr.querySelector('.fsnb-search');
-    const resultsBox = tr.querySelector('.fsnb-search-results');
-    const topkSelect = tr.querySelector('.fsnb-select');
-
-    let lastQ = '';
-    let timer = null;
-
-    function hideResults() {
-      resultsBox.style.display = 'none';
-      resultsBox.innerHTML = '';
-    }
-
-    searchInput.addEventListener('input', () => {
-      const q = (searchInput.value || '').trim();
-      if (q.length < 3) {
-        hideResults();
-        return;
-      }
-      lastQ = q;
-
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(async () => {
-        try {
-          const resp = await fetch(`/api/v1/train/review/items/search?q=${encodeURIComponent(q)}&limit=20`, {
-            credentials: 'include'
-          });
-          const data = await resp.json();
-          if (q !== lastQ) return;
-
-          resultsBox.innerHTML = '';
-          (data.items || []).forEach(it => {
-            const div = document.createElement('div');
-            div.style.padding = '6px';
-            div.style.cursor = 'pointer';
-            div.innerText = `${it.code} — ${it.name} (${it.unit || ''})`;
-
-            div.addEventListener('click', () => {
-              const opt = document.createElement('option');
-              opt.value = String(it.id);
-              opt.setAttribute('data-code', it.code || '');
-              opt.setAttribute('data-unit', it.unit || '');
-              opt.text = `${it.code} — ${it.name} (${it.unit || ''}) [manual]`;
-              topkSelect.appendChild(opt);
-
-              topkSelect.value = String(it.id);
-              topkSelect.dispatchEvent(new Event('change'));
-
-              hideResults();
-            });
-
-            resultsBox.appendChild(div);
-          });
-
-          resultsBox.style.display = 'block';
-        } catch (e) {
-          hideResults();
-        }
-      }, 250);
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!resultsBox.contains(e.target) && e.target !== searchInput) {
-        hideResults();
-      }
-    });
-  });
-
-  // Commit
-  document.getElementById('btnCommit').addEventListener('click', async () => {
-    const payload = { source_name: sourceName, rows: rows };
-
-    const resp = await fetch('/api/v1/train/review/commit', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!resp.ok) {
-      alert('Не удалось сформировать отчёт. Проверь логи.');
-      return;
-    }
-
-    const blob = await resp.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'VOR.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-  });
-})();
-</script>
+            <td class="u-hidden">
+              <span class="js-auto-id">{{ r.auto_selected_item_id or "" }}</span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}

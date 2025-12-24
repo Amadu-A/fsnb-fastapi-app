@@ -1,0 +1,9 @@
+/* path: static/css/blocks/_page.css */
+.page {
+  min-height: 100vh;
+}
+
+.page__main {
+  padding-top: var(--gap);
+  padding-bottom: var(--gap);
+}

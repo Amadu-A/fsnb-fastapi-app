@@ -1,0 +1,33 @@
+/* path: static/css/_variables.css */
+:root {
+  /* layout */
+  --container-max-width: 1000px;
+  --container-padding: 16px;
+  --radius: 10px;
+  --gap: 16px;
+
+  /* typography */
+  --font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-size: 16px;
+  --line-height: 1.4;
+
+  /* colors */
+  --text: #111;
+  --text-muted: rgba(17, 17, 17, 0.7);
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --border: #eeeeee;
+
+  --link: #0366d6;
+
+  --primary: #0366d6;
+  --danger: #d33;
+
+  --ok: #19a974;
+  --ok-bg: #e6fbf2;
+
+  --err: #d33;
+  --err-bg: #fdecec;
+
+  --focus: rgba(3, 102, 214, 0.35);
+}

@@ -1,0 +1,18 @@
+/* path: static/css/blocks/_alert.css */
+.alert {
+  margin-bottom: var(--gap);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  background: var(--surface);
+}
+
+.alert--success {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+.alert--error {
+  border-color: var(--err);
+  background: var(--err-bg);
+}

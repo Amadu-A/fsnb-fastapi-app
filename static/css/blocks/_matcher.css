@@ -1,0 +1,19 @@
+/* path: static/css/blocks/_matcher.css */
+.matcher__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.matcher__row + .matcher__row {
+  margin-top: 12px;
+}
+
+.matcher__file-status {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.matcher__error {
+  margin-top: 12px;
+}

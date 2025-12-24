@@ -1,0 +1,15 @@
+/* path: static/css/blocks/_grid.css */
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 680px) {
+  .grid--2 {
+    grid-template-columns: 1fr;
+  }
+}

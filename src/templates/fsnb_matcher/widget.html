@@ -2,24 +2,21 @@
 
 <div class="card" id="fsnb-matcher">
   <form id="fsnb-match-form">
-    <div class="row">
-      <!-- сохраняем стиль кнопки выбора файла: input скрыт, кнопка — label -->
+    <div class="matcher__row">
       <label class="btn" for="fsnb-file">Выбрать JSON</label>
       <input id="fsnb-file" name="file" type="file" accept=".json,application/json" hidden />
-
-      <span id="fsnb-file-status" class="muted">Файл не выбран</span>
+      <span id="fsnb-file-status" class="matcher__file-status">Файл не выбран</span>
     </div>
 
-    <div class="row" style="margin-top:12px;">
-      <button class="btn btn-primary" type="submit">Сопоставить и скачать Excel</button>
+    <div class="matcher__row">
+      <button class="btn btn--primary" type="submit">Сопоставить и скачать Excel</button>
     </div>
 
-    <div id="fsnb-error" class="alert alert-error" style="display:none; margin-top:12px;"></div>
+    <div id="fsnb-error" class="alert alert--error matcher__error u-hidden"></div>
   </form>
 </div>
 
-<!-- Модальное окно обработки -->
-<div id="fsnb-modal" class="modal" style="display:none;" aria-hidden="true">
+<div id="fsnb-modal" class="modal u-hidden" aria-hidden="true">
   <div class="modal__backdrop"></div>
   <div class="modal__content">
     <div class="kitty-spinner" aria-hidden="true">
