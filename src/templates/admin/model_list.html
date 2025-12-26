@@ -61,8 +61,18 @@
             {% for f in list_display %}
               <td>
                 {% set v = attr(row, f) %}
-                {% if fk_map.get(f) and v %}
+
+                {# 1) negatives — массив id → делаем кликабельным в items?id=... #}
+                {% if f == 'negatives' and v %}
+                  {% for neg_id in v %}
+                    <a href="{{ request.url_for('admin_model_list', slug='items') }}?id={{ neg_id }}">{{ neg_id }}</a>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+
+                {# 2) FK-поля → ссылка в целевую таблицу по id #}
+                {% elif fk_map.get(f) and v %}
                   <a href="{{ request.url_for('admin_model_list', slug=fk_map[f]['slug']) }}?{{ fk_map[f]['field'] }}={{ v }}">{{ v }}</a>
+
+                {# 3) обычное значение #}
                 {% else %}
                   {{ v }}
                 {% endif %}
@@ -70,18 +80,14 @@
             {% endfor %}
 
             <td>
-              {# --- Edit button guard: works for id or custom PK field --- #}
-              {% set pk_name = edit_pk if edit_pk is defined and edit_pk else 'id' %}
-              {% set pk_val = attr(row, pk_name) %}
-              {% set can_edit_row = (ma.can_edit and ma.form_fields) and (pk_val is not none) and (has_edit is not defined or has_edit) %}
-
-              {% if can_edit_row and pk_name == 'id' %}
-                <a class="btn btn--xs"
-                   href="{{ request.url_for('admin_model_edit', slug=slug, obj_id=pk_val) }}">Edit</a>
-              {% elif can_edit_row and pk_name != 'id' %}
-                {# Если ты когда-нибудь добавишь edit по другому PK, роут надо будет расширить.
-                   Сейчас этот кейс просто прячем (чтобы не было битых ссылок). #}
-                <span class="muted">—</span>
+              {% if has_edit and edit_pk == 'id' %}
+                {% set pk_val = attr(row, 'id') %}
+                {% if pk_val is not none %}
+                  <a class="btn btn--xs"
+                     href="{{ request.url_for('admin_model_edit', slug=slug, obj_id=pk_val) }}">Edit</a>
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
               {% else %}
                 <span class="muted">—</span>
               {% endif %}

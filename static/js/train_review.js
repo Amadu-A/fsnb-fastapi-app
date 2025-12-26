@@ -77,6 +77,20 @@
       updateMeta(tr, opt && opt.value ? opt : null);
     });
 
+    // ensure empty option exists (so user can clear selection)
+    qsa(table.tBodies[0], "tr").forEach((tr) => {
+      const sel = qs(tr, ".js-fsnb-select");
+      if (!sel) return;
+
+      const hasEmpty = Array.from(sel.options).some((o) => (o.value || "") === "");
+      if (!hasEmpty) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.text = "— нет (none_match) —";
+        sel.insertBefore(opt, sel.firstChild);
+      }
+    });
+
     // top-K change
     qsa(document, ".js-fsnb-select").forEach((sel) => {
       sel.addEventListener("change", (e) => {
@@ -92,6 +106,7 @@
 
         const nextSelected = target.value ? safeInt(target.value) : null;
 
+        // user picked a different option than the model auto-choice -> auto becomes negative, label becomes gold
         if (r.auto_selected_item_id && nextSelected && nextSelected !== r.auto_selected_item_id) {
           if (!r.negatives.includes(r.auto_selected_item_id)) {
             r.negatives.push(r.auto_selected_item_id);
@@ -101,10 +116,20 @@
           if (labelSelect) labelSelect.value = "gold";
         }
 
+        // user cleared selection -> none_match
         if (!nextSelected) {
           r.label = "none_match";
           const labelSelect = qs(tr, ".js-label-select");
           if (labelSelect) labelSelect.value = "none_match";
+
+          // this is also a model mistake -> auto becomes negative
+          if (r.auto_selected_item_id && !r.negatives.includes(r.auto_selected_item_id)) {
+            r.negatives.push(r.auto_selected_item_id);
+          }
+
+          r.selected_item_id = null;
+          updateMeta(tr, null);
+          return;
         }
 
         r.selected_item_id = nextSelected;
@@ -126,6 +151,24 @@
         if (!r) return;
 
         r.label = target.value;
+
+        const fsnbSelect = qs(tr, ".js-fsnb-select");
+
+        // If user explicitly sets none_match:
+        // - auto choice must be marked as negative
+        // - selected_item_id must be NULL (even if select still has some value)
+        if (r.label === "none_match") {
+          if (r.auto_selected_item_id && !r.negatives.includes(r.auto_selected_item_id)) {
+            r.negatives.push(r.auto_selected_item_id);
+          }
+
+          r.selected_item_id = null;
+
+          if (fsnbSelect) {
+            fsnbSelect.value = "";
+            updateMeta(tr, null);
+          }
+        }
       });
     });
 

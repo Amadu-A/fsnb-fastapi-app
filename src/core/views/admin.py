@@ -178,6 +178,13 @@ async def admin_index(
 
 # ------------- ГЕНЕРИК: СПИСОК -------------
 
+from urllib.parse import urlencode
+
+from sqlalchemy import func, or_, select
+from sqlalchemy.inspection import inspect as sa_inspect
+
+# ... остальное уже у тебя есть: coerce_value/build_pagination/get_columns/get_boolean_fields/get_fk_target_table etc.
+
 @router.get("/admin/m/{slug}", name="admin_model_list")
 async def admin_model_list(
     request: Request,
@@ -204,12 +211,23 @@ async def admin_model_list(
         page = int(request.query_params.get("page", "1"))
     except Exception:
         page = 1
-    page_size = getattr(ma, "page_size", 50) or 50
+    if page < 1:
+        page = 1
+
+    page_size = int(getattr(ma, "page_size", 50) or 50)
+    if page_size <= 0:
+        page_size = 50
+    if page_size > 200:
+        page_size = 200  # защита
 
     stmt = select(Model)
     count_stmt = select(func.count()).select_from(Model)
 
+    # bool fields
+    bool_fields = get_boolean_fields(Model)
+
     # exact filters: любой query param совпал с колонкой -> equality
+    # + булевы фильтры all/true/false (как ты задумал в UI)
     for key, raw in request.query_params.items():
         if key in {"page", "q"}:
             continue
@@ -217,6 +235,16 @@ async def admin_model_list(
             continue
         if raw is None or str(raw).strip() == "":
             continue
+
+        # булевы фильтры: true/false
+        if key in bool_fields:
+            b = parse_bool(raw)
+            if b is None:
+                continue
+            stmt = stmt.where(getattr(Model, key) == b)
+            count_stmt = count_stmt.where(getattr(Model, key) == b)
+            continue
+
         val = coerce_value(cols[key], raw)
         if val is None:
             continue
@@ -237,16 +265,22 @@ async def admin_model_list(
     total = (await session.execute(count_stmt)).scalar_one()
     pagination = build_pagination(total=total, page=page, page_size=page_size)
 
-    # ordering
+    # ordering:
+    # 1) created_at desc если есть
+    # 2) если есть одиночный id — по id desc
+    # 3) если нет id (например training_run_rows) — по всем PK desc
     if "created_at" in cols:
         stmt = stmt.order_by(getattr(Model, "created_at").desc())
-    elif "id" in cols:
-        stmt = stmt.order_by(getattr(Model, "id").desc())
+    else:
+        insp = sa_inspect(Model)
+        pk_cols = list(insp.primary_key)
+        if pk_cols:
+            # training_run_rows: (run_id, row_id) — сортируем стабильно по PK desc
+            for pk in pk_cols:
+                stmt = stmt.order_by(pk.desc())
 
     stmt = stmt.offset(pagination.offset).limit(pagination.limit)
     rows = (await session.execute(stmt)).scalars().all()
-
-    bool_fields = get_boolean_fields(Model)
 
     # FK map: field -> target slug (table name), filter by id
     fk_map: dict[str, dict[str, str]] = {}
@@ -268,11 +302,16 @@ async def admin_model_list(
 
     prev_url = make_url(pagination.prev_page) if pagination.has_prev else None
     next_url = make_url(pagination.next_page) if pagination.has_next else None
-    insp = sa_inspect(Model)
-    pk_cols = insp.primary_key
 
-    has_edit = bool(pk_cols) and len(pk_cols) == 1 and pk_cols[0].key in ("id",)  # или просто len==1 и int-тип
-    edit_pk = pk_cols[0].key if has_edit else None
+    # edit guard:
+    # редактируем только если:
+    # - в админке включён can_edit
+    # - есть ровно 1 PK
+    # - этот PK называется "id"
+    insp = sa_inspect(Model)
+    pk_cols = list(insp.primary_key)
+    has_edit = bool(getattr(ma, "can_edit", False)) and bool(ma.form_fields) and (len(pk_cols) == 1) and (pk_cols[0].key == "id")
+    edit_pk = "id" if has_edit else None
 
     return templates.TemplateResponse(
         "admin/model_list.html",
