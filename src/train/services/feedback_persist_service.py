@@ -1,9 +1,9 @@
 # path: src/train/services/feedback_persist_service.py
-
 from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app_logging import get_logger
@@ -24,8 +24,10 @@ from src.crud.feedback_label_repository import (
     IFeedbackLabelRepository,
     FeedbackLabelRepository,
 )
+from src.train.models.feedback_session import FeedbackSession
+from src.train.models.feedback_row import FeedbackRow
+from src.train.models.feedback_label import FeedbackLabel
 from src.train.services.review_service import ReviewService
-
 
 log = get_logger("train.feedback_persist")
 
@@ -34,12 +36,10 @@ class FeedbackPersistService:
     """
     Сохранение итогов ревью в feedback_*.
 
-    Стратегия:
-    - создаём feedback_session
-    - создаём feedback_rows
-    - считаем top-K заново (чтобы гарантированно сохранить “что показывали”)
-    - сохраняем feedback_candidates
-    - сохраняем feedback_labels (trusted/draft по роли)
+    Раньше persist_commit создавал НОВУЮ сессию и дублировал строки/кандидатов.
+    Теперь:
+    - если передан session_id -> сохраняем метки в существующую draft-сессию и закрываем её
+    - fallback (без session_id) оставлен на случай старых вызовов, но UI должен всегда слать session_id
     """
 
     def __init__(
@@ -59,18 +59,6 @@ class FeedbackPersistService:
 
     @staticmethod
     def _rows_for_db(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """
-        Подготовка rows для вставки в feedback_rows.
-
-        Почему нужно:
-        - payload из UI/normalize_commit_rows содержит служебные поля (например row_idx),
-          которые могут НЕ существовать в SQLAlchemy-модели FeedbackRow.
-        - если передать их в FeedbackRow(**row) — получим:
-          TypeError: '<field>' is an invalid keyword argument for FeedbackRow
-
-        Поэтому для БД оставляем только то, что точно относится к строке:
-        caption/units/qty (+ любые другие поля, которые реально есть в вашей модели).
-        """
         out: list[dict[str, Any]] = []
         for r in rows:
             if not isinstance(r, dict):
@@ -80,11 +68,35 @@ class FeedbackPersistService:
                     "caption": r.get("caption"),
                     "units": r.get("units"),
                     "qty": r.get("qty"),
-                    # row_idx НЕ передаём в модель
-                    # label/selected_item_id/negatives/note тоже НЕ являются полями FeedbackRow
                 }
             )
         return out
+
+    @staticmethod
+    def _build_row_id_by_idx(
+        *,
+        db_rows: list[FeedbackRow],
+        commit_rows: list[dict[str, Any]],
+    ) -> dict[int, int]:
+        """
+        Привязка commit row_idx -> DB row_id.
+
+        В вашей схеме FeedbackRow не хранит row_idx, поэтому делаем минимально:
+        считаем, что порядок строк в UI соответствует порядку вставки в БД (id ASC).
+
+        Если когда-то захотите сделать "железобетонно", добавьте FeedbackRow.row_idx
+        и заполняйте при /create.
+        """
+        # commit_rows может прийти не отсортированным
+        commit_rows_sorted = sorted(commit_rows, key=lambda r: int(r.get("row_idx", 0)))
+
+        mapping: dict[int, int] = {}
+        for i, db_row in enumerate(db_rows):
+            if i >= len(commit_rows_sorted):
+                break
+            row_idx = int(commit_rows_sorted[i].get("row_idx", i))
+            mapping[row_idx] = int(db_row.id)
+        return mapping
 
     async def persist_commit(
         self,
@@ -96,24 +108,84 @@ class FeedbackPersistService:
         is_trusted: bool,
         rows: list[dict[str, Any]],
         top_k: int = 5,
+        session_id: int | None = None,
     ) -> int:
-        # 1) создаём feedback_session
+        # ----------- NEW PATH: commit into existing draft session -----------
+        if session_id is not None:
+            fb_session = await session.get(FeedbackSession, int(session_id))
+            if not fb_session:
+                raise ValueError(f"FeedbackSession {session_id} not found")
+
+            if str(getattr(fb_session, "status", "") or "") == "closed":
+                raise ValueError(f"FeedbackSession {session_id} already closed")
+
+            # DB rows for that session
+            db_rows = (
+                (await session.execute(
+                    select(FeedbackRow)
+                    .where(FeedbackRow.session_id == int(session_id))
+                    .order_by(FeedbackRow.id.asc())
+                ))
+                .scalars()
+                .all()
+            )
+            if not db_rows:
+                raise ValueError(f"FeedbackSession {session_id} has no rows")
+
+            row_id_by_idx = self._build_row_id_by_idx(db_rows=db_rows, commit_rows=rows)
+
+            # make commit idempotent: delete existing labels for these rows
+            row_ids = [int(r.id) for r in db_rows]
+            await session.execute(delete(FeedbackLabel).where(FeedbackLabel.row_id.in_(row_ids)))
+
+            # set trusted flag for all rows of this session
+            await session.execute(
+                update(FeedbackRow)
+                .where(FeedbackRow.session_id == int(session_id))
+                .values(is_trusted=bool(is_trusted), created_by=str(actor_email))
+            )
+
+            # write labels (uses payload rows: row_idx/label/selected_item_id/negatives/note)
+            await self._label_repo.bulk_create_from_commit(
+                session=session,
+                rows=rows,
+                row_id_by_idx=row_id_by_idx,
+                created_by=str(actor_email),
+                is_trusted=bool(is_trusted),
+            )
+
+            # close same session (no duplicates)
+            await session.execute(
+                update(FeedbackSession)
+                .where(FeedbackSession.id == int(session_id))
+                .values(status="closed")
+            )
+
+            log.info(
+                {
+                    "event": "feedback_saved_existing_session",
+                    "feedback_session_id": int(session_id),
+                    "rows": len(rows),
+                    "trusted": bool(is_trusted),
+                }
+            )
+            return int(session_id)
+
+        # ----------- OLD PATH: (fallback) creates new session -----------
+        # Оставлено для совместимости, но UI должен всегда присылать session_id
         fb_session = await self._session_repo.create(
             session=session,
             source_name=source_name,
             created_by=str(actor_email),
         )
 
-        # 2) строки (в БД пишем только “чистые” поля, без row_idx/label/etc)
         rows_for_db = self._rows_for_db(rows)
-
         fb_rows = await self._row_repo.bulk_create(
             session=session,
             session_id=int(fb_session.id),
             rows=rows_for_db,
         )
 
-        # 3) пересчёт top-K и сохранение кандидатов
         review_svc = ReviewService(item_repo=self._item_repo)
         captions = [str(r.get("caption", "") or "") for r in rows]
         topk = await review_svc.get_topk_for_captions(
@@ -122,24 +194,10 @@ class FeedbackPersistService:
             top_k=int(top_k),
         )
 
-        # row_id привязываем к row_idx.
-        # Важно: модель FeedbackRow может НЕ иметь поля row_idx.
-        # Тогда мы используем порядок вставки: fb_rows[i] соответствует rows[i].
         row_id_by_idx: dict[int, int] = {}
-
         for i, r_model in enumerate(fb_rows):
-            db_row_id = int(r_model.id)
-
-            model_row_idx = getattr(r_model, "row_idx", None)
-            if model_row_idx is not None:
-                try:
-                    row_idx = int(model_row_idx)
-                except Exception:
-                    row_idx = int(rows[i].get("row_idx", i))
-            else:
-                row_idx = int(rows[i].get("row_idx", i))
-
-            row_id_by_idx[row_idx] = db_row_id
+            row_idx = int(rows[i].get("row_idx", i))
+            row_id_by_idx[row_idx] = int(r_model.id)
 
         await self._candidate_repo.bulk_create_from_topk(
             session=session,
@@ -148,7 +206,6 @@ class FeedbackPersistService:
             model_name="giga",
         )
 
-        # 4) labels (используем исходные rows, где есть row_idx/label/selected_item_id/negatives/note)
         await self._label_repo.bulk_create_from_commit(
             session=session,
             rows=rows,
@@ -157,12 +214,11 @@ class FeedbackPersistService:
             is_trusted=bool(is_trusted),
         )
 
-        # 5) закрываем сессию
         await self._session_repo.close(session=session, session_id=int(fb_session.id))
 
         log.info(
             {
-                "event": "feedback_saved",
+                "event": "feedback_saved_new_session_fallback",
                 "feedback_session_id": int(fb_session.id),
                 "rows": len(rows),
                 "trusted": bool(is_trusted),

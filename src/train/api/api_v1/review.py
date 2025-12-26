@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app_logging import get_logger
@@ -15,6 +16,7 @@ from src.crud.item_repository import IItemRepository, ItemRepository
 from src.train.models.feedback_candidate import FeedbackCandidate
 from src.train.models.feedback_row import FeedbackRow
 from src.train.models.feedback_session import FeedbackSession
+from src.train.models.feedback_label import FeedbackLabel  # <-- добавили
 from src.train.services.feedback_persist_service import FeedbackPersistService
 from src.train.services.report_service import ReportService
 from src.train.services.review_service import ReviewService
@@ -103,22 +105,25 @@ async def commit_review_and_export_xlsx(
 ) -> StreamingResponse:
     """
     "Сформировать":
-    1) одной транзакцией сохраняем feedback_* (trusted/draft по роли)
-    2) отдаём Excel (ВОР) на скачивание
+    1) сохраняем feedback_labels в УЖЕ созданную draft-сессию (по session_id)
+    2) закрываем эту draft-сессию (status=closed)
+    3) отдаём Excel (ВОР)
     """
     require_logged_in_session(request)
 
     actor = get_actor_identity(request)
 
-    # ВАЖНО: is_actor_editor() делает SELECT => SQLAlchemy 2.x autobegin.
-    # Поэтому перед явной write-транзакцией нужно закрыть текущую транзакцию.
+    # is_actor_editor() делает SELECT => SQLAlchemy 2.x autobegin
     trusted = await is_actor_editor(session=session, actor_user_id=actor["user_id"])
     if session.in_transaction():
         await session.rollback()
 
+    session_id = _safe_int(body.get("session_id"))
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
     source_name = str(body.get("source_name") or "").strip() or "web_review"
     rows = body.get("rows")
-
     if not isinstance(rows, list) or not rows:
         raise HTTPException(status_code=400, detail="rows must be a non-empty list")
 
@@ -129,21 +134,21 @@ async def commit_review_and_export_xlsx(
     persist_svc = FeedbackPersistService(item_repo=item_repo)
     report_svc = ReportService(item_repo=item_repo)
 
-    async with session.begin():
-        feedback_session_id = await persist_svc.persist_commit(
-            session=session,
-            source_name=source_name,
-            actor_email=actor["email"],
-            actor_user_id=actor["user_id"],
-            is_trusted=bool(trusted),
-            rows=normalized_rows,
-        )
+    try:
+        async with session.begin():
+            feedback_session_id = await persist_svc.persist_commit(
+                session=session,
+                session_id=int(session_id),  # <-- главное изменение
+                source_name=source_name,
+                actor_email=actor["email"],
+                actor_user_id=actor["user_id"],
+                is_trusted=bool(trusted),
+                rows=normalized_rows,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # build excel (может делать SELECT — это ок, откроется новая read-транзакция)
-    xlsx_bytes = await report_svc.build_result_xlsx(
-        session=session,
-        rows=normalized_rows,
-    )
+    xlsx_bytes = await report_svc.build_result_xlsx(session=session, rows=normalized_rows)
 
     filename = f"VOR_{feedback_session_id}.xlsx"
     log.info(
@@ -264,3 +269,48 @@ async def review_create(
 
     sid = int(fb_session.id)
     return ReviewCreateResponse(session_id=sid, redirect_url=f"/train/review/{sid}")
+
+
+@router.get("/no_match/export")
+async def export_no_match_rows(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(db_helper.session_getter)],
+    trusted_only: bool = True,
+    limit: int = 1000,
+    offset: int = 0,
+) -> JSONResponse:
+    """
+    Ваши "негативы-строки" = строки спецификации, где label == none_match.
+    Это именно тексты, которые "не должны матчиться ни с чем".
+    """
+    require_logged_in_session(request)
+
+    actor = get_actor_identity(request)
+    can_export = await is_actor_editor(session=session, actor_user_id=actor["user_id"])
+    if not can_export:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    stmt = (
+        select(
+            FeedbackRow.id.label("row_id"),
+            FeedbackRow.session_id.label("session_id"),
+            FeedbackRow.caption.label("caption"),
+            FeedbackRow.units_in.label("units"),
+            FeedbackRow.qty_in.label("qty"),
+            FeedbackLabel.created_at.label("labeled_at"),
+            FeedbackLabel.created_by.label("created_by"),
+            FeedbackLabel.is_trusted.label("is_trusted"),
+        )
+        .select_from(FeedbackRow)
+        .join(FeedbackLabel, FeedbackLabel.row_id == FeedbackRow.id)
+        .where(FeedbackLabel.label == "none_match")
+        .order_by(FeedbackLabel.created_at.desc())
+        .limit(int(limit))
+        .offset(int(offset))
+    )
+
+    if trusted_only:
+        stmt = stmt.where(FeedbackLabel.is_trusted.is_(True))
+
+    res = (await session.execute(stmt)).mappings().all()
+    return JSONResponse({"items": [dict(r) for r in res]})
