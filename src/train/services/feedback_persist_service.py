@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app_logging import get_logger
@@ -24,9 +23,6 @@ from src.crud.feedback_label_repository import (
     IFeedbackLabelRepository,
     FeedbackLabelRepository,
 )
-from src.train.models.feedback_session import FeedbackSession
-from src.train.models.feedback_row import FeedbackRow
-from src.train.models.feedback_label import FeedbackLabel
 from src.train.services.review_service import ReviewService
 
 log = get_logger("train.feedback_persist")
@@ -36,10 +32,11 @@ class FeedbackPersistService:
     """
     Сохранение итогов ревью в feedback_*.
 
-    Раньше persist_commit создавал НОВУЮ сессию и дублировал строки/кандидатов.
-    Теперь:
+    Логика сохранена (как в вашей версии):
     - если передан session_id -> сохраняем метки в существующую draft-сессию и закрываем её
-    - fallback (без session_id) оставлен на случай старых вызовов, но UI должен всегда слать session_id
+    - fallback (без session_id) оставлен для старых вызовов (но UI должен слать session_id)
+    - commit идемпотентен: старые labels удаляются и заменяются новыми
+    - candidates в NEW PATH не пересоздаются (они уже созданы при /create)
     """
 
     def __init__(
@@ -59,6 +56,10 @@ class FeedbackPersistService:
 
     @staticmethod
     def _rows_for_db(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Fallback path: готовим rows для bulk_create.
+        (Оставляем caption/units/qty как у вас было)
+        """
         out: list[dict[str, Any]] = []
         for r in rows:
             if not isinstance(r, dict):
@@ -75,19 +76,17 @@ class FeedbackPersistService:
     @staticmethod
     def _build_row_id_by_idx(
         *,
-        db_rows: list[FeedbackRow],
+        db_rows: list[Any],
         commit_rows: list[dict[str, Any]],
     ) -> dict[int, int]:
         """
         Привязка commit row_idx -> DB row_id.
 
-        В вашей схеме FeedbackRow не хранит row_idx, поэтому делаем минимально:
-        считаем, что порядок строк в UI соответствует порядку вставки в БД (id ASC).
-
-        Если когда-то захотите сделать "железобетонно", добавьте FeedbackRow.row_idx
-        и заполняйте при /create.
+        В вашей схеме FeedbackRow не хранит row_idx, поэтому:
+        - берём rows сессии в порядке id ASC
+        - commit_rows сортируем по row_idx
+        - считаем, что порядок совпадает
         """
-        # commit_rows может прийти не отсортированным
         commit_rows_sorted = sorted(commit_rows, key=lambda r: int(r.get("row_idx", 0)))
 
         mapping: dict[int, int] = {}
@@ -112,40 +111,33 @@ class FeedbackPersistService:
     ) -> int:
         # ----------- NEW PATH: commit into existing draft session -----------
         if session_id is not None:
-            fb_session = await session.get(FeedbackSession, int(session_id))
+            fb_session = await self._session_repo.get(session=session, session_id=int(session_id))
             if not fb_session:
                 raise ValueError(f"FeedbackSession {session_id} not found")
 
             if str(getattr(fb_session, "status", "") or "") == "closed":
                 raise ValueError(f"FeedbackSession {session_id} already closed")
 
-            # DB rows for that session
-            db_rows = (
-                (await session.execute(
-                    select(FeedbackRow)
-                    .where(FeedbackRow.session_id == int(session_id))
-                    .order_by(FeedbackRow.id.asc())
-                ))
-                .scalars()
-                .all()
-            )
+            # DB rows for that session (внутри repo)
+            db_rows = await self._row_repo.list_by_session_id(session=session, session_id=int(session_id))
             if not db_rows:
                 raise ValueError(f"FeedbackSession {session_id} has no rows")
 
             row_id_by_idx = self._build_row_id_by_idx(db_rows=db_rows, commit_rows=rows)
 
-            # make commit idempotent: delete existing labels for these rows
+            # commit idempotent: delete existing labels for these rows
             row_ids = [int(r.id) for r in db_rows]
-            await session.execute(delete(FeedbackLabel).where(FeedbackLabel.row_id.in_(row_ids)))
+            await self._label_repo.delete_by_row_ids(session=session, row_ids=row_ids)
 
-            # set trusted flag for all rows of this session
-            await session.execute(
-                update(FeedbackRow)
-                .where(FeedbackRow.session_id == int(session_id))
-                .values(is_trusted=bool(is_trusted), created_by=str(actor_email))
+            # set trusted flag for all rows of this session (если такие поля есть)
+            await self._row_repo.mark_session_rows_trusted(
+                session=session,
+                session_id=int(session_id),
+                is_trusted=bool(is_trusted),
+                created_by=str(actor_email),
             )
 
-            # write labels (uses payload rows: row_idx/label/selected_item_id/negatives/note)
+            # write labels
             await self._label_repo.bulk_create_from_commit(
                 session=session,
                 rows=rows,
@@ -155,11 +147,7 @@ class FeedbackPersistService:
             )
 
             # close same session (no duplicates)
-            await session.execute(
-                update(FeedbackSession)
-                .where(FeedbackSession.id == int(session_id))
-                .values(status="closed")
-            )
+            await self._session_repo.close(session=session, session_id=int(session_id))
 
             log.info(
                 {
@@ -172,7 +160,6 @@ class FeedbackPersistService:
             return int(session_id)
 
         # ----------- OLD PATH: (fallback) creates new session -----------
-        # Оставлено для совместимости, но UI должен всегда присылать session_id
         fb_session = await self._session_repo.create(
             session=session,
             source_name=source_name,

@@ -9,16 +9,12 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.app_logging import get_logger
 from src.core.models.db_helper import db_helper
+from src.crud.feedback_session_repository import FeedbackSessionRepository, IFeedbackSessionRepository
 from src.crud.item_repository import IItemRepository, ItemRepository
-from src.train.models.feedback_candidate import FeedbackCandidate
-from src.train.models.feedback_row import FeedbackRow
-from src.train.models.feedback_session import FeedbackSession
 from src.train.services.review_service import ReviewService
 from src.train.utils.access import require_logged_in_session
 
@@ -69,6 +65,10 @@ async def review_upload_post(
     Принимаем JSON спецификацию, рендерим таблицу с top-K.
     Ничего в БД не пишем (JS state живёт на клиенте).
     URL: /train/review
+
+    Важно:
+    - в этом сценарии session_id отсутствует => /api/v1/train/review/commit работать НЕ будет.
+    - commit работает только для /train/review/{session_id}, созданного через API /create.
     """
     require_logged_in_session(request)
 
@@ -127,6 +127,7 @@ async def review_upload_post(
 
     log.info({"event": "review_rendered_upload", "rows": len(view_rows), "top_k": int(top_k)})
 
+    # session_id здесь нет — это “preview mode”
     return templates.TemplateResponse(
         "train/review_table.html",
         {
@@ -152,15 +153,8 @@ async def review_table_get(
     require_logged_in_session(request)
     csrf = _ensure_csrf(request)
 
-    stmt = (
-        select(FeedbackSession)
-        .where(FeedbackSession.id == session_id)
-        .options(
-            selectinload(FeedbackSession.rows).selectinload(FeedbackRow.candidates),
-        )
-    )
-    res = await session.execute(stmt)
-    fb_session = res.scalar_one_or_none()
+    session_repo: IFeedbackSessionRepository = FeedbackSessionRepository()
+    fb_session = await session_repo.get_with_rows_and_candidates(session=session, session_id=int(session_id))
 
     if fb_session is None:
         return templates.TemplateResponse(
@@ -181,9 +175,8 @@ async def review_table_get(
                 item_ids.add(int(cand.item_id))
 
     item_repo: IItemRepository = ItemRepository()
-    meta = {}
+    meta: dict[int, tuple[str | None, str | None, str | None]] = {}
     if item_ids:
-        # meta[item_id] = (name, unit, code)
         meta = await item_repo.fetch_items_meta_by_ids(session=session, item_ids=sorted(item_ids))
 
     # приводим строки к формату, который ожидает шаблон review_table.html
@@ -196,7 +189,6 @@ async def review_table_get(
         for c in cands_sorted:
             item_id = int(c.item_id)
             name, unit, code = meta.get(item_id, (None, None, None))
-
             candidates.append(
                 {
                     "id": item_id,
@@ -224,13 +216,7 @@ async def review_table_get(
             }
         )
 
-    log.info(
-        {
-            "event": "review_rendered_db",
-            "session_id": int(session_id),
-            "rows": len(view_rows),
-        }
-    )
+    log.info({"event": "review_rendered_db", "session_id": int(session_id), "rows": len(view_rows)})
 
     return templates.TemplateResponse(
         "train/review_table.html",

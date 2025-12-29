@@ -22,7 +22,6 @@ from src.core.dependencies import (
 )
 from src.core.models.db_helper import db_helper
 from src.core.models.user import User
-from src.core.models.profile import Profile
 from src.core.models.permission import Permission
 from src.core.security import verify_password
 from src.crud.permission_repository import IPermissionRepository
@@ -35,7 +34,7 @@ from src.core.utils import (
     coerce_value,
     get_boolean_fields,
     get_columns,
-    get_fk_target_table,
+    get_fk_target_table, parse_bool,
 )
 
 router = APIRouter()
@@ -177,13 +176,6 @@ async def admin_index(
 
 
 # ------------- ГЕНЕРИК: СПИСОК -------------
-
-from urllib.parse import urlencode
-
-from sqlalchemy import func, or_, select
-from sqlalchemy.inspection import inspect as sa_inspect
-
-# ... остальное уже у тебя есть: coerce_value/build_pagination/get_columns/get_boolean_fields/get_fk_target_table etc.
 
 @router.get("/admin/m/{slug}", name="admin_model_list")
 async def admin_model_list(
