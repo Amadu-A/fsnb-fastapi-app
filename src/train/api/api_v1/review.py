@@ -11,10 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app_logging import get_logger
 from src.core.models.db_helper import db_helper
+from src.crud.feedback_candidate_repository import (
+    FeedbackCandidateRepository,
+    IFeedbackCandidateRepository,
+)
+from src.crud.feedback_label_repository import FeedbackLabelRepository, IFeedbackLabelRepository
+from src.crud.feedback_row_repository import FeedbackRowRepository, IFeedbackRowRepository
+from src.crud.feedback_session_repository import FeedbackSessionRepository, IFeedbackSessionRepository
 from src.crud.item_repository import IItemRepository, ItemRepository
-from src.train.models.feedback_candidate import FeedbackCandidate
-from src.train.models.feedback_row import FeedbackRow
-from src.train.models.feedback_session import FeedbackSession
 from src.train.services.feedback_persist_service import FeedbackPersistService
 from src.train.services.report_service import ReportService
 from src.train.services.review_service import ReviewService
@@ -49,24 +53,17 @@ async def items_search(
 ) -> JSONResponse:
     require_logged_in_session(request)
 
-    if not q or len(q.strip()) < 2:
+    q = (q or "").strip()
+    if len(q) < 2:
         return JSONResponse({"items": []})
 
     repo: IItemRepository = ItemRepository()
-    items = await repo.search_items(session, query=q.strip(), limit=int(limit))
+    items = await repo.search_items(session, query=q, limit=int(limit))
 
-    payload = []
-    for it in items:
-        payload.append(
-            {
-                "id": int(it.id),
-                "code": it.code,
-                "name": it.name,
-                "unit": it.unit,
-                "type": it.type,
-            }
-        )
-
+    payload = [
+        {"id": int(it.id), "code": it.code, "name": it.name, "unit": it.unit, "type": it.type}
+        for it in items
+    ]
     return JSONResponse({"items": payload})
 
 
@@ -103,22 +100,25 @@ async def commit_review_and_export_xlsx(
 ) -> StreamingResponse:
     """
     "Сформировать":
-    1) одной транзакцией сохраняем feedback_* (trusted/draft по роли)
-    2) отдаём Excel (ВОР) на скачивание
+    1) сохраняем feedback_labels в УЖЕ созданную draft-сессию (по session_id)
+    2) закрываем эту draft-сессию (status=closed)
+    3) отдаём Excel (ВОР)
     """
     require_logged_in_session(request)
 
     actor = get_actor_identity(request)
 
-    # ВАЖНО: is_actor_editor() делает SELECT => SQLAlchemy 2.x autobegin.
-    # Поэтому перед явной write-транзакцией нужно закрыть текущую транзакцию.
+    # is_actor_editor() делает SELECT => SQLAlchemy 2.x autobegin
     trusted = await is_actor_editor(session=session, actor_user_id=actor["user_id"])
     if session.in_transaction():
         await session.rollback()
 
+    session_id = _safe_int(body.get("session_id"))
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
     source_name = str(body.get("source_name") or "").strip() or "web_review"
     rows = body.get("rows")
-
     if not isinstance(rows, list) or not rows:
         raise HTTPException(status_code=400, detail="rows must be a non-empty list")
 
@@ -126,24 +126,37 @@ async def commit_review_and_export_xlsx(
     review_svc = ReviewService(item_repo=item_repo)
     normalized_rows = review_svc.normalize_commit_rows(rows)
 
-    persist_svc = FeedbackPersistService(item_repo=item_repo)
+    # DI: репозитории (чтобы persist сервис не делал прямой SQL)
+    session_repo: IFeedbackSessionRepository = FeedbackSessionRepository()
+    row_repo: IFeedbackRowRepository = FeedbackRowRepository()
+    cand_repo: IFeedbackCandidateRepository = FeedbackCandidateRepository()
+    label_repo: IFeedbackLabelRepository = FeedbackLabelRepository()
+
+    persist_svc = FeedbackPersistService(
+        item_repo=item_repo,
+        session_repo=session_repo,
+        row_repo=row_repo,
+        candidate_repo=cand_repo,
+        label_repo=label_repo,
+    )
     report_svc = ReportService(item_repo=item_repo)
 
-    async with session.begin():
-        feedback_session_id = await persist_svc.persist_commit(
-            session=session,
-            source_name=source_name,
-            actor_email=actor["email"],
-            actor_user_id=actor["user_id"],
-            is_trusted=bool(trusted),
-            rows=normalized_rows,
-        )
+    try:
+        async with session.begin():
+            feedback_session_id = await persist_svc.persist_commit(
+                session=session,
+                session_id=int(session_id),
+                source_name=source_name,
+                actor_email=actor["email"],
+                actor_user_id=actor["user_id"],
+                is_trusted=bool(trusted),
+                rows=normalized_rows,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # build excel (может делать SELECT — это ок, откроется новая read-транзакция)
-    xlsx_bytes = await report_svc.build_result_xlsx(
-        session=session,
-        rows=normalized_rows,
-    )
+    # Excel можно строить вне write-транзакции
+    xlsx_bytes = await report_svc.build_result_xlsx(session=session, rows=normalized_rows)
 
     filename = f"VOR_{feedback_session_id}.xlsx"
     log.info(
@@ -170,6 +183,13 @@ async def review_create(
     file: UploadFile = File(...),
     top_k: int = 5,
 ) -> ReviewCreateResponse:
+    """
+    Создаёт draft-сессию в БД:
+    - feedback_session
+    - feedback_rows
+    - feedback_candidates (top-K)
+    Возвращает redirect на /train/review/{session_id}
+    """
     require_logged_in_session(request)
 
     actor = get_actor_identity(request)
@@ -185,7 +205,7 @@ async def review_create(
     if not isinstance(items, list) or not items:
         raise HTTPException(status_code=400, detail="JSON must contain non-empty 'items' list")
 
-    source_name = None
+    source_name: str | None = None
     if isinstance(data, dict):
         source_name = str(data.get("source_name") or data.get("source") or "").strip() or None
     if not source_name:
@@ -207,60 +227,67 @@ async def review_create(
     if session.in_transaction():
         await session.rollback()
 
+    # DI repos
+    session_repo: IFeedbackSessionRepository = FeedbackSessionRepository()
+    row_repo: IFeedbackRowRepository = FeedbackRowRepository()
+    cand_repo: IFeedbackCandidateRepository = FeedbackCandidateRepository()
+
     async with session.begin():
-        fb_session = FeedbackSession(
-            source_name=source_name,
-            created_by=actor_email,
-            status="open",
-        )
-        session.add(fb_session)
-        await session.flush()
+        fb_session = await session_repo.create(session=session, source_name=source_name, created_by=actor_email)
 
-        row_objs: list[FeedbackRow] = []
+        rows_payload: list[dict[str, Any]] = []
         for cap, u, q in zip(captions, units_in, qty_in):
-            row_objs.append(
-                FeedbackRow(
-                    session_id=fb_session.id,
-                    caption=cap,
-                    units_in=u if u is not None else None,
-                    qty_in=q if q is not None else None,
-                    created_by=actor_email,
-                    is_trusted=False,
-                )
+            rows_payload.append(
+                {
+                    "caption": cap,
+                    "units_in": u if u is not None else None,
+                    "qty_in": q if q is not None else None,
+                    "created_by": actor_email,
+                    "is_trusted": False,
+                }
             )
-        session.add_all(row_objs)
-        await session.flush()
 
-        cand_objs: list[FeedbackCandidate] = []
-        for row, found in zip(row_objs, topk):
-            if not found:
-                continue
+        db_rows = await row_repo.bulk_create(session=session, session_id=int(fb_session.id), rows=rows_payload)
 
-            for idx, cand in enumerate(found, start=1):
-                if isinstance(cand, dict):
-                    item_id = _safe_int(cand.get("item_id") or cand.get("id"))
-                    score = cand.get("score")
-                else:
-                    item_id = _safe_int(getattr(cand, "id", None))
-                    score = getattr(cand, "score", None)
+        # mapping: 0-based idx -> db row_id
+        row_id_by_idx = {i: int(r.id) for i, r in enumerate(db_rows)}
 
-                if item_id is None:
-                    continue
-
-                cand_objs.append(
-                    FeedbackCandidate(
-                        row_id=row.id,
-                        item_id=item_id,
-                        model_name="giga",
-                        model_version=None,
-                        score=float(score) if score is not None else None,
-                        rank=int(idx),
-                        shown=True,
-                    )
-                )
-
-        if cand_objs:
-            session.add_all(cand_objs)
+        await cand_repo.bulk_create_from_topk(
+            session=session,
+            topk=topk,
+            row_id_by_idx=row_id_by_idx,
+            model_name="giga",
+            model_version=None,
+        )
 
     sid = int(fb_session.id)
     return ReviewCreateResponse(session_id=sid, redirect_url=f"/train/review/{sid}")
+
+
+@router.get("/no_match/export")
+async def export_no_match_rows(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(db_helper.session_getter)],
+    trusted_only: bool = True,
+    limit: int = 1000,
+    offset: int = 0,
+) -> JSONResponse:
+    """
+    Экспорт "негативов-строк": спецификации, где label == none_match.
+    Реализация запроса должна жить в CRUD-репозитории.
+    """
+    require_logged_in_session(request)
+
+    actor = get_actor_identity(request)
+    can_export = await is_actor_editor(session=session, actor_user_id=actor["user_id"])
+    if not can_export:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    label_repo: IFeedbackLabelRepository = FeedbackLabelRepository()
+    items = await label_repo.list_no_match_rows(
+        session=session,
+        trusted_only=bool(trusted_only),
+        limit=int(limit),
+        offset=int(offset),
+    )
+    return JSONResponse({"items": items})

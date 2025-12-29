@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.train.models.feedback_label import FeedbackLabel
+from src.train.models.feedback_row import FeedbackRow
 
 
 class IFeedbackLabelRepository(Protocol):
@@ -18,6 +20,17 @@ class IFeedbackLabelRepository(Protocol):
         created_by: str,
         is_trusted: bool,
     ) -> int: ...
+
+    async def delete_by_row_ids(self, session: AsyncSession, *, row_ids: list[int]) -> int: ...
+
+    async def list_no_match_rows(
+        self,
+        session: AsyncSession,
+        *,
+        trusted_only: bool = True,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
 
 
 class FeedbackLabelRepository(IFeedbackLabelRepository):
@@ -67,14 +80,12 @@ class FeedbackLabelRepository(IFeedbackLabelRepository):
         """
         cols = set(FeedbackLabel.__table__.columns.keys())
 
-        # куда писать выбранный item
         selected_key = None
         if "selected_item_id" in cols:
             selected_key = "selected_item_id"
         elif "selected_item" in cols:
             selected_key = "selected_item"
 
-        # куда писать negatives
         negatives_key = None
         if "negatives" in cols:
             negatives_key = "negatives"
@@ -91,7 +102,6 @@ class FeedbackLabelRepository(IFeedbackLabelRepository):
 
             row_idx = self._to_int_or_none(r.get("row_idx", 0)) or 0
 
-            # row_idx может быть 0-based или 1-based — попробуем оба варианта
             row_id = row_id_by_idx.get(row_idx)
             if row_id is None:
                 row_id = row_id_by_idx.get(row_idx + 1)
@@ -103,7 +113,6 @@ class FeedbackLabelRepository(IFeedbackLabelRepository):
             negatives = self._to_int_list(r.get("negatives", []))
             note = str(r.get("note", "") or "").strip() or None
 
-            # если label=gold и ничего не выбрали — не падаем, помечаем ambiguous
             if label == "gold" and selected_item_id is None:
                 label = "ambiguous"
 
@@ -138,3 +147,45 @@ class FeedbackLabelRepository(IFeedbackLabelRepository):
         session.add_all(objs)
         await session.flush()
         return len(objs)
+
+    async def delete_by_row_ids(self, session: AsyncSession, *, row_ids: list[int]) -> int:
+        if not row_ids:
+            return 0
+        res = await session.execute(delete(FeedbackLabel).where(FeedbackLabel.row_id.in_([int(x) for x in row_ids])))
+        return int(res.rowcount or 0)
+
+    async def list_no_match_rows(
+        self,
+        session: AsyncSession,
+        *,
+        trusted_only: bool = True,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """
+        "Негативы-строки" = FeedbackRow.caption, где FeedbackLabel.label == none_match.
+        """
+        stmt = (
+            select(
+                FeedbackRow.id.label("row_id"),
+                FeedbackRow.session_id.label("session_id"),
+                FeedbackRow.caption.label("caption"),
+                FeedbackRow.units_in.label("units"),
+                FeedbackRow.qty_in.label("qty"),
+                FeedbackLabel.created_at.label("labeled_at"),
+                FeedbackLabel.created_by.label("created_by"),
+                FeedbackLabel.is_trusted.label("is_trusted"),
+            )
+            .select_from(FeedbackRow)
+            .join(FeedbackLabel, FeedbackLabel.row_id == FeedbackRow.id)
+            .where(FeedbackLabel.label == "none_match")
+            .order_by(FeedbackLabel.created_at.desc())
+            .limit(int(limit))
+            .offset(int(offset))
+        )
+
+        if trusted_only:
+            stmt = stmt.where(FeedbackLabel.is_trusted.is_(True))
+
+        res = (await session.execute(stmt)).mappings().all()
+        return [dict(r) for r in res]

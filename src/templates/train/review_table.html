@@ -10,7 +10,13 @@
 {% block content %}
   <h2 class="title">Ревью (сохранение + Excel по кнопке “Сформировать”)</h2>
 
-  <div id="reviewSourceName" data-source-name="{{ source_name|tojson|safe }}" class="u-hidden"></div>
+  {# Важно: session_id нужен для commit, чтобы НЕ создавать вторую сессию #}
+  <div
+    id="reviewMeta"
+    data-source-name="{{ source_name }}"
+    data-session-id="{{ session_id }}"
+    class="u-hidden"
+  ></div>
 
   <div class="review__actions">
     <button class="btn btn--primary" id="btnCommit">Сформировать (Excel) + сохранить метки</button>

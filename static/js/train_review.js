@@ -16,11 +16,12 @@
   document.addEventListener("DOMContentLoaded", () => {
     const table = document.getElementById("reviewTable");
     const btn = document.getElementById("btnCommit");
-    const sourceNameNode = document.getElementById("reviewSourceName");
+    const metaNode = document.getElementById("reviewMeta");
 
-    if (!table || !btn || !sourceNameNode) return;
+    if (!table || !btn || !metaNode) return;
 
-    const sourceName = sourceNameNode.getAttribute("data-source-name");
+    const sourceName = metaNode.dataset.sourceName || "web_review";
+    const sessionId = safeInt(metaNode.dataset.sessionId);
 
     const rows = qsa(table.tBodies[0], "tr").map((tr) => {
       const rowIdx = safeInt(tr.getAttribute("data-row-idx")) ?? 0;
@@ -77,6 +78,20 @@
       updateMeta(tr, opt && opt.value ? opt : null);
     });
 
+    // ensure empty option exists
+    qsa(table.tBodies[0], "tr").forEach((tr) => {
+      const sel = qs(tr, ".js-fsnb-select");
+      if (!sel) return;
+
+      const hasEmpty = Array.from(sel.options).some((o) => (o.value || "") === "");
+      if (!hasEmpty) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.text = "— нет (none_match) —";
+        sel.insertBefore(opt, sel.firstChild);
+      }
+    });
+
     // top-K change
     qsa(document, ".js-fsnb-select").forEach((sel) => {
       sel.addEventListener("change", (e) => {
@@ -92,6 +107,7 @@
 
         const nextSelected = target.value ? safeInt(target.value) : null;
 
+        // changed away from auto-choice => auto is negative, label gold
         if (r.auto_selected_item_id && nextSelected && nextSelected !== r.auto_selected_item_id) {
           if (!r.negatives.includes(r.auto_selected_item_id)) {
             r.negatives.push(r.auto_selected_item_id);
@@ -101,10 +117,19 @@
           if (labelSelect) labelSelect.value = "gold";
         }
 
+        // cleared selection => none_match + auto negative
         if (!nextSelected) {
           r.label = "none_match";
           const labelSelect = qs(tr, ".js-label-select");
           if (labelSelect) labelSelect.value = "none_match";
+
+          if (r.auto_selected_item_id && !r.negatives.includes(r.auto_selected_item_id)) {
+            r.negatives.push(r.auto_selected_item_id);
+          }
+
+          r.selected_item_id = null;
+          updateMeta(tr, null);
+          return;
         }
 
         r.selected_item_id = nextSelected;
@@ -126,6 +151,24 @@
         if (!r) return;
 
         r.label = target.value;
+
+        const fsnbSelect = qs(tr, ".js-fsnb-select");
+
+        // explicit none_match:
+        // - auto becomes negative
+        // - selected_item_id must be null
+        if (r.label === "none_match") {
+          if (r.auto_selected_item_id && !r.negatives.includes(r.auto_selected_item_id)) {
+            r.negatives.push(r.auto_selected_item_id);
+          }
+
+          r.selected_item_id = null;
+
+          if (fsnbSelect) {
+            fsnbSelect.value = "";
+            updateMeta(tr, null);
+          }
+        }
       });
     });
 
@@ -219,7 +262,16 @@
 
     // Commit
     btn.addEventListener("click", async () => {
-      const payload = { source_name: sourceName, rows: rows };
+      if (!sessionId) {
+        alert("Не найден session_id. Обнови страницу / проверь, что шаблон передаёт session_id.");
+        return;
+      }
+
+      const payload = {
+        session_id: sessionId, // <-- главное изменение
+        source_name: sourceName,
+        rows: rows,
+      };
 
       const resp = await fetch("/api/v1/train/review/commit", {
         method: "POST",

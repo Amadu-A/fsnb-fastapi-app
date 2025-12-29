@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.train.models.feedback_row import FeedbackRow
@@ -17,6 +18,17 @@ class IFeedbackRowRepository(Protocol):
         rows: list[dict[str, Any]],
     ) -> list[FeedbackRow]:
         raise NotImplementedError
+
+    async def list_by_session_id(self, session: AsyncSession, *, session_id: int) -> list[FeedbackRow]: ...
+
+    async def mark_session_rows_trusted(
+        self,
+        session: AsyncSession,
+        *,
+        session_id: int,
+        is_trusted: bool,
+        created_by: str | None,
+    ) -> int: ...
 
 
 class FeedbackRowRepository:
@@ -98,3 +110,31 @@ class FeedbackRowRepository:
         session.add_all(objs)
         await session.flush()  # получаем id
         return objs
+
+    async def list_by_session_id(self, session: AsyncSession, *, session_id: int) -> list[FeedbackRow]:
+        stmt = select(FeedbackRow).where(FeedbackRow.session_id == int(session_id)).order_by(FeedbackRow.id.asc())
+        res = await session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def mark_session_rows_trusted(
+            self,
+            session: AsyncSession,
+            *,
+            session_id: int,
+            is_trusted: bool,
+            created_by: str | None,
+    ) -> int:
+        cols = set(FeedbackRow.__table__.columns.keys())
+        values: dict[str, Any] = {}
+        if "is_trusted" in cols:
+            values["is_trusted"] = bool(is_trusted)
+        if "created_by" in cols and created_by is not None:
+            values["created_by"] = str(created_by)
+
+        if not values:
+            return 0
+
+        res = await session.execute(
+            update(FeedbackRow).where(FeedbackRow.session_id == int(session_id)).values(**values)
+        )
+        return int(res.rowcount or 0)

@@ -159,7 +159,7 @@ admin_site.register(
 admin_site.register(
     FeedbackLabel,
     slug="feedback_labels",
-    list_display=["id", "row_id", "label", "selected_item_id", "is_trusted", "created_by", "created_at"],
+    list_display=["id", "row_id", "label", "selected_item_id", "is_trusted", "created_by", "created_at", "negatives"],
     form_fields=["row_id", "label", "selected_item_id", "negatives", "note", "is_trusted", "created_by"],
     readonly_fields=["id", "created_at"],
     search_fields=["label", "created_by", "note"],

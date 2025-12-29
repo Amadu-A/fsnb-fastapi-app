@@ -5,7 +5,9 @@ from typing import Optional, Protocol
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from src.train.models.feedback_row import FeedbackRow
 from src.train.models.feedback_session import FeedbackSession
 
 
@@ -13,6 +15,9 @@ class IFeedbackSessionRepository(Protocol):
     async def create(self, session: AsyncSession, source_name: str, created_by: str) -> FeedbackSession: ...
     async def close(self, session: AsyncSession, session_id: int) -> None: ...
     async def get(self, session: AsyncSession, session_id: int) -> Optional[FeedbackSession]: ...
+    async def get_with_rows_and_candidates(
+        self, session: AsyncSession, session_id: int
+    ) -> Optional[FeedbackSession]: ...
 
 
 class FeedbackSessionRepository(IFeedbackSessionRepository):
@@ -29,4 +34,17 @@ class FeedbackSessionRepository(IFeedbackSessionRepository):
 
     async def get(self, session: AsyncSession, session_id: int) -> Optional[FeedbackSession]:
         res = await session.execute(select(FeedbackSession).where(FeedbackSession.id == int(session_id)))
+        return res.scalar_one_or_none()
+
+    async def get_with_rows_and_candidates(
+        self, session: AsyncSession, session_id: int
+    ) -> Optional[FeedbackSession]:
+        stmt = (
+            select(FeedbackSession)
+            .where(FeedbackSession.id == int(session_id))
+            .options(
+                selectinload(FeedbackSession.rows).selectinload(FeedbackRow.candidates),
+            )
+        )
+        res = await session.execute(stmt)
         return res.scalar_one_or_none()
