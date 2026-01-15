@@ -68,7 +68,13 @@ class QdrantConfig(BaseModel):
 class FsnbConfig(BaseModel):
     fsnb_dir: str = "FSNB-2022_28_08_25"
     weights_dir: str = "weights"
+    # корень приложения/данных (в Docker = /app, на Windows можно не задавать)
+    app_root: str = "."
+    # локальный путь, куда скачать модель
     model_giga_dir: str = "weights/Giga-Embeddings-instruct"
+    # HF repo id (важно для prefetch)
+    model_giga_hf: str = "ai-sage/Giga-Embeddings-instruct"
+
     similarity_threshold: float = 0.70
     embed_batch_size: int = 128
 

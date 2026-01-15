@@ -23,8 +23,10 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false \
  && poetry install --only main --no-interaction --no-ansi
 
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 \
+RUN pip --default-timeout=300 install --no-cache-dir --retries 10 \
+    --index-url https://download.pytorch.org/whl/cu121 \
     torch torchvision torchaudio
+
 
 # ✅ Добавляем копирование статики (и папку uploads, если она уже есть)
 COPY static ./static

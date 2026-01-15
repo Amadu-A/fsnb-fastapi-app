@@ -1,3 +1,4 @@
+# file: src/fsnb_matcher/embeddings/model_giga.py
 from __future__ import annotations
 
 from functools import lru_cache
@@ -14,11 +15,28 @@ INSTRUCT_QUERY = "Instruct: Given a database query, retrieve relevant FSNB entri
 
 
 def _fsnb_dir(path_str: str) -> Path:
-    # paths в конфиге у тебя строки — приводим к Path относительно /app
+    """
+    Преобразует строковый путь из конфига в абсолютный Path.
+
+    - Если путь абсолютный: возвращаем как есть.
+    - Если относительный:
+        * если задан settings.fsnb.app_root:
+            - если app_root абсолютный -> root/app_root + относительный
+            - если app_root относительный -> относительно текущей рабочей директории
+        * иначе -> относительно cwd
+    """
     p = Path(path_str)
+
     if p.is_absolute():
         return p
-    return (Path("/app") / p).resolve()
+
+    app_root = Path(str(getattr(settings.fsnb, "app_root", ".") or "."))
+    if app_root.is_absolute():
+        return (app_root / p).resolve()
+
+    # относительный app_root (например ".") — отталкиваемся от cwd
+    return (Path.cwd() / app_root / p).resolve()
+
 
 
 @lru_cache()

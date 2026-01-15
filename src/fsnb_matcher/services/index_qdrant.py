@@ -57,14 +57,19 @@ async def init_all_collections(
     ids_batch: List[int] = []
     texts_batch: List[str] = []
 
-    async for item_id, name, _code, _unit, _type in item_repo.iter_for_index(session, yield_per=2000):
+    async for item_id, name, _code, _unit, _type in item_repo.iter_for_index(session, yield_per=500):
         ids_batch.append(int(item_id))
         texts_batch.append(str(name))
 
         if len(ids_batch) < batch_size:
             continue
 
-        vectors = await asyncio.to_thread(model_giga.encode, texts_batch, False, len(texts_batch))
+        vectors = await asyncio.to_thread(
+            model_giga.encode,
+            texts_batch,
+            is_query=False,
+            batch_size=len(texts_batch),
+        )
         if hasattr(vectors, "tolist"):
             vectors = vectors.tolist()
 
@@ -84,7 +89,12 @@ async def init_all_collections(
 
     # добиваем хвост
     if ids_batch:
-        vectors = await asyncio.to_thread(model_giga.encode, texts_batch, False, len(texts_batch))
+        vectors = await asyncio.to_thread(
+            model_giga.encode,
+            texts_batch,
+            is_query=False,
+            batch_size=len(texts_batch),
+        )
         if hasattr(vectors, "tolist"):
             vectors = vectors.tolist()
 
