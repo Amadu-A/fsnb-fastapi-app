@@ -85,6 +85,9 @@ class FsnbConfig(BaseModel):
     hf_embed_device: Literal["auto", "cuda", "cpu"] = "auto"
     hf_embed_fp16: bool = True
 
+    # если True — после каждого encode выгружаем модель и чистим VRAM
+    unload_after_each_request: bool = True
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

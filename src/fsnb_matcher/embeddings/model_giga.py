@@ -1,6 +1,7 @@
 # file: src/fsnb_matcher/embeddings/model_giga.py
 from __future__ import annotations
 
+import gc
 from functools import lru_cache
 from pathlib import Path
 from typing import List
@@ -26,7 +27,6 @@ def _fsnb_dir(path_str: str) -> Path:
         * иначе -> относительно cwd
     """
     p = Path(path_str)
-
     if p.is_absolute():
         return p
 
@@ -60,6 +60,10 @@ def _dtype():
     if _use_fp16() and _device().startswith("cuda"):
         return torch.float16
     return torch.float32
+
+
+def _should_unload_after_each_request() -> bool:
+    return bool(getattr(settings.fsnb, "unload_after_each_request", False))
 
 
 @lru_cache()
@@ -123,14 +127,52 @@ def encode(texts: List[str], *, is_query: bool, batch_size: int | None = None) -
     finally:
         sem.release()
 
+        # ✅ ключевое: если включён режим "не держать VRAM", выгружаем после каждого запроса
+        if _should_unload_after_each_request():
+            before = _cuda_mem()
+            unload()
+            after = _cuda_mem()
+            print(f"[giga] unload done mem_before={before} mem_after={after}")
+
+
+def _cuda_mem() -> dict:
+    if not (torch.cuda.is_available() and _device().startswith("cuda")):
+        return {}
+    return {
+        "alloc": int(torch.cuda.memory_allocated()),
+        "reserved": int(torch.cuda.memory_reserved()),
+        "max_reserved": int(torch.cuda.max_memory_reserved()),
+    }
+
 
 def unload() -> None:
+    """
+    Жёстко освобождаем VRAM:
+    - снимаем lru_cache (чтобы веса не держались)
+    - собираем GC (чтобы питон реально удалил объекты)
+    - empty_cache + ipc_collect (чтобы драйверу вернулась память)
+    """
     try:
         get.cache_clear()
     except Exception:
         pass
+
+    # гарантируем сборку мусора, чтобы ушли ссылки на модель/тензоры
+    try:
+        gc.collect()
+    except Exception:
+        pass
+
     if torch.cuda.is_available() and _device().startswith("cuda"):
-        torch.cuda.empty_cache()
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        try:
+            torch.cuda.ipc_collect()
+        except Exception:
+            pass
+
 
 def embed_texts(texts: list[str], *, is_query: bool = False, batch_size: int | None = None) -> list[list[float]]:
     """

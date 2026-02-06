@@ -55,7 +55,6 @@ services:
       APP_CONFIG__QDRANT__HOST: qdrant
       APP_CONFIG__QDRANT__PORT: "6333"
       # если в конфиге почта берётся из APP_CONFIG__EMAIL__*, можно не задавать
-      APP_CONFIG__FSNB__HF_EMBED_DEVICE: cuda
       APP_CONFIG__FSNB__APP_ROOT: /app
       APP_CONFIG__FSNB__MODEL_GIGA_DIR: /app/weights/Giga-Embeddings-instruct
     deploy:

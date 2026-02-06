@@ -9,7 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/app/weights/hf-cache \
     TRANSFORMERS_CACHE=/app/weights/hf-cache \
     SENTENCE_TRANSFORMERS_HOME=/app/weights/hf-cache \
-    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+#     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl git ca-certificates locales \
